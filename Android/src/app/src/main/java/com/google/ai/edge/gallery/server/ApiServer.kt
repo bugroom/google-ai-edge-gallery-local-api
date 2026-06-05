@@ -20,6 +20,7 @@ import android.content.Context
 import android.util.Log
 import com.google.ai.edge.gallery.data.ApiServerConfig
 import com.google.ai.edge.gallery.data.AuthType
+import com.google.ai.edge.gallery.data.HttpTrafficLogger
 import com.google.ai.edge.gallery.data.api.ChatCompletionRequest
 import com.google.ai.edge.gallery.data.api.ErrorResponse
 import com.google.ai.edge.gallery.data.api.HealthResponse
@@ -79,6 +80,7 @@ class ApiServer(
 
         try {
             startTime.set(System.currentTimeMillis())
+            HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER event=server_starting host=${config.host} port=${config.port}")
             
             val embedded = embeddedServer(CIO, port = config.port, host = config.host) {
                 install(ContentNegotiation) {
@@ -106,6 +108,10 @@ class ApiServer(
                 install(StatusPages) {
                     exception<IllegalArgumentException> { call, cause ->
                         Log.w(TAG, "$LOG_MARKER event=request_bad_request path=${call.request.path()} error=${cause.message}")
+                        HttpTrafficLogger.logError(
+                            call.request.path(),
+                            "$LOG_MARKER event=request_bad_request error=${cause.message}",
+                        )
                         call.respond(
                             HttpStatusCode.BadRequest,
                             ErrorResponse(
@@ -116,6 +122,10 @@ class ApiServer(
                     }
                     exception<Exception> { call, cause ->
                         Log.e(TAG, "$LOG_MARKER event=request_error path=${call.request.path()} error=${cause.message}", cause)
+                        HttpTrafficLogger.logError(
+                            call.request.path(),
+                            "$LOG_MARKER event=request_error error=${cause.message}",
+                        )
                         call.respond(
                             HttpStatusCode.InternalServerError,
                             ErrorResponse(
@@ -130,58 +140,96 @@ class ApiServer(
                     get("/health") {
                         if (!call.authorize()) return@get
                         currentConnections.incrementAndGet()
-                        Log.d(TAG, "$LOG_MARKER event=health_check path=/health")
-                        call.respond(
-                            HealthResponse(
-                                status = "ok",
-                                uptime = System.currentTimeMillis() - startTime.get(),
-                                connections = currentConnections.get().toInt(),
-                                loaded_model = null,
+                        try {
+                            HttpTrafficLogger.logRequest("GET", "/health", call.safeHeaders())
+                            Log.d(TAG, "$LOG_MARKER event=health_check path=/health")
+                            call.respond(
+                                HealthResponse(
+                                    status = "ok",
+                                    uptime = System.currentTimeMillis() - startTime.get(),
+                                    connections = currentConnections.get().toInt(),
+                                    loaded_model = null,
+                                )
                             )
-                        )
-                        currentConnections.decrementAndGet()
+                            HttpTrafficLogger.logResponse("/health", HttpStatusCode.OK.value, "$LOG_MARKER event=health_ok")
+                        } finally {
+                            currentConnections.decrementAndGet()
+                        }
                     }
 
                     route("/v1") {
                         get("/models") {
                             if (!call.authorize()) return@get
                             currentConnections.incrementAndGet()
-                            val models = inferenceHandler.getDownloadedLlmModels()
-                            call.respond(
-                                ModelsResponse(data = models.map { it.toApiModel() })
-                            )
-                            currentConnections.decrementAndGet()
+                            try {
+                                HttpTrafficLogger.logRequest("GET", "/v1/models", call.safeHeaders())
+                                val models = inferenceHandler.getDownloadedLlmModels()
+                                call.respond(
+                                    ModelsResponse(data = models.map { it.toApiModel() })
+                                )
+                                HttpTrafficLogger.logResponse(
+                                    "/v1/models",
+                                    HttpStatusCode.OK.value,
+                                    "$LOG_MARKER event=models_ok count=${models.size}",
+                                )
+                            } finally {
+                                currentConnections.decrementAndGet()
+                            }
                         }
 
                         post("/chat/completions") {
                             if (!call.authorize()) return@post
                             currentConnections.incrementAndGet()
-                            val request = call.receive<ChatCompletionRequest>()
-                            if (request.stream) {
-                                call.respond(
-                                    HttpStatusCode.BadRequest,
-                                    ErrorResponse(
-                                        error = "Streaming responses are not supported yet",
-                                        type = "unsupported_feature",
-                                    ),
-                                )
-                            } else {
-                                call.respond(inferenceHandler.handleChatCompletion(request))
+                            try {
+                                HttpTrafficLogger.logRequest("POST", "/v1/chat/completions", call.safeHeaders())
+                                val request = call.receive<ChatCompletionRequest>()
+                                if (request.stream) {
+                                    call.respond(
+                                        HttpStatusCode.BadRequest,
+                                        ErrorResponse(
+                                            error = "Streaming responses are not supported yet",
+                                            type = "unsupported_feature",
+                                        ),
+                                    )
+                                    HttpTrafficLogger.logResponse(
+                                        "/v1/chat/completions",
+                                        HttpStatusCode.BadRequest.value,
+                                        "$LOG_MARKER event=chat_stream_unsupported model=${request.model}",
+                                    )
+                                } else {
+                                    val response = inferenceHandler.handleChatCompletion(request)
+                                    call.respond(response)
+                                    HttpTrafficLogger.logResponse(
+                                        "/v1/chat/completions",
+                                        HttpStatusCode.OK.value,
+                                        "$LOG_MARKER event=chat_ok request_id=${response.id} model=${response.model}",
+                                    )
+                                }
+                            } finally {
+                                currentConnections.decrementAndGet()
                             }
-                            currentConnections.decrementAndGet()
                         }
 
                         get("/engines") {
                             if (!call.authorize()) return@get
                             currentConnections.incrementAndGet()
-                            val models = inferenceHandler.getDownloadedLlmModels()
-                            call.respond(
-                                mapOf(
-                                    "object" to "list",
-                                    "data" to models.map { it.toApiEngine() }
+                            try {
+                                HttpTrafficLogger.logRequest("GET", "/v1/engines", call.safeHeaders())
+                                val models = inferenceHandler.getDownloadedLlmModels()
+                                call.respond(
+                                    mapOf(
+                                        "object" to "list",
+                                        "data" to models.map { it.toApiEngine() }
+                                    )
                                 )
-                            )
-                            currentConnections.decrementAndGet()
+                                HttpTrafficLogger.logResponse(
+                                    "/v1/engines",
+                                    HttpStatusCode.OK.value,
+                                    "$LOG_MARKER event=engines_ok count=${models.size}",
+                                )
+                            } finally {
+                                currentConnections.decrementAndGet()
+                            }
                         }
                     }
                 }
@@ -190,8 +238,10 @@ class ApiServer(
             server = embedded.engine
             server?.start(wait = false)
             Log.i(TAG, "$LOG_MARKER event=server_started host=${config.host} port=${config.port}")
+            HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER event=server_started host=${config.host} port=${config.port}")
         } catch (e: Exception) {
             Log.e(TAG, "$LOG_MARKER event=server_start_failed error=${e.message}", e)
+            HttpTrafficLogger.logError("api-server", "$LOG_MARKER event=server_start_failed error=${e.message}")
             server = null
             throw e
         }
@@ -204,6 +254,7 @@ class ApiServer(
         server?.stop(1000, 5000)
         server = null
         Log.i(TAG, "$LOG_MARKER event=server_stopped")
+        HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER event=server_stopped")
     }
 
     private suspend fun ApplicationCall.authorize(): Boolean {
@@ -213,6 +264,10 @@ class ApiServer(
         val authorized = config.apiKey.isNotBlank() && authorization == expected
         if (!authorized) {
             Log.w(TAG, "$LOG_MARKER event=auth_failed path=${request.path()} auth_type=${config.authType}")
+            HttpTrafficLogger.logError(
+                request.path(),
+                "$LOG_MARKER event=auth_failed auth_type=${config.authType}",
+            )
             respond(
                 HttpStatusCode.Unauthorized,
                 ErrorResponse(
@@ -222,6 +277,17 @@ class ApiServer(
             )
         }
         return authorized
+    }
+
+    private fun ApplicationCall.safeHeaders(): String {
+        return request.headers.entries().joinToString("\n") { entry ->
+            val value = if (entry.key.equals(HttpHeaders.Authorization, ignoreCase = true)) {
+                "<redacted>"
+            } else {
+                entry.value.joinToString(",")
+            }
+            "${entry.key}: $value"
+        }
     }
 
     /**

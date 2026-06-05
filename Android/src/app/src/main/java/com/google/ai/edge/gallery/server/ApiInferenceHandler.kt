@@ -19,6 +19,7 @@ package com.google.ai.edge.gallery.server
 import android.content.Context
 import android.util.Log
 import com.google.ai.edge.gallery.common.processLlmResponse
+import com.google.ai.edge.gallery.data.HttpTrafficLogger
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.Task
@@ -50,6 +51,7 @@ class ApiInferenceHandler(
   fun getDownloadedLlmModels(): List<Model> {
     val models = modelManagerViewModel.getAllDownloadedModels()
     Log.d(TAG, "$LOG_MARKER event=models_list count=${models.size}")
+    HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER event=models_list count=${models.size}")
     return models
   }
 
@@ -57,6 +59,10 @@ class ApiInferenceHandler(
     val requestId = "chatcmpl-${UUID.randomUUID()}"
     val startedAt = System.currentTimeMillis()
     Log.i(
+      TAG,
+      "$LOG_MARKER request_id=$requestId event=chat_start model=${request.model} messages=${request.messages.size}",
+    )
+    HttpTrafficLogger.logDebug(
       TAG,
       "$LOG_MARKER request_id=$requestId event=chat_start model=${request.model} messages=${request.messages.size}",
     )
@@ -71,6 +77,10 @@ class ApiInferenceHandler(
           val promptTokens = estimateTokens(request.messages.joinToString("\n") { it.content })
           val completionTokens = estimateTokens(output)
           Log.i(
+            TAG,
+            "$LOG_MARKER request_id=$requestId event=chat_done model=${model.name} duration_ms=${System.currentTimeMillis() - startedAt} completion_chars=${output.length}",
+          )
+          HttpTrafficLogger.logDebug(
             TAG,
             "$LOG_MARKER request_id=$requestId event=chat_done model=${model.name} duration_ms=${System.currentTimeMillis() - startedAt} completion_chars=${output.length}",
           )
@@ -96,9 +106,17 @@ class ApiInferenceHandler(
       }
     } catch (e: TimeoutCancellationException) {
       Log.e(TAG, "$LOG_MARKER request_id=$requestId event=chat_timeout model=${request.model}", e)
+      HttpTrafficLogger.logError(
+        "/v1/chat/completions",
+        "$LOG_MARKER request_id=$requestId event=chat_timeout model=${request.model}",
+      )
       throw IllegalStateException("Request timed out after ${requestTimeoutMs}ms", e)
     } catch (e: Exception) {
       Log.e(TAG, "$LOG_MARKER request_id=$requestId event=chat_error model=${request.model}", e)
+      HttpTrafficLogger.logError(
+        "/v1/chat/completions",
+        "$LOG_MARKER request_id=$requestId event=chat_error model=${request.model} error=${e.message}",
+      )
       throw e
     }
   }
@@ -107,6 +125,10 @@ class ApiInferenceHandler(
     val model = modelManagerViewModel.getModelByName(modelId)
     if (model == null) {
       Log.w(TAG, "$LOG_MARKER request_id=$requestId event=model_not_found model=$modelId")
+      HttpTrafficLogger.logError(
+        "/v1/chat/completions",
+        "$LOG_MARKER request_id=$requestId event=model_not_found model=$modelId",
+      )
       throw IllegalArgumentException("Model '$modelId' was not found")
     }
     val status = modelManagerViewModel.uiState.value.modelDownloadStatus[model.name]?.status
@@ -115,10 +137,18 @@ class ApiInferenceHandler(
         TAG,
         "$LOG_MARKER request_id=$requestId event=model_not_downloaded model=${model.name} status=$status",
       )
+      HttpTrafficLogger.logError(
+        "/v1/chat/completions",
+        "$LOG_MARKER request_id=$requestId event=model_not_downloaded model=${model.name} status=$status",
+      )
       throw IllegalArgumentException("Model '${model.name}' is not downloaded")
     }
     if (!model.isLlm) {
       Log.w(TAG, "$LOG_MARKER request_id=$requestId event=model_not_llm model=${model.name}")
+      HttpTrafficLogger.logError(
+        "/v1/chat/completions",
+        "$LOG_MARKER request_id=$requestId event=model_not_llm model=${model.name}",
+      )
       throw IllegalArgumentException("Model '${model.name}' is not an LLM model")
     }
     return model
@@ -130,6 +160,10 @@ class ApiInferenceHandler(
     }
     if (task == null) {
       Log.w(TAG, "$LOG_MARKER request_id=$requestId event=task_not_found model=${model.name}")
+      HttpTrafficLogger.logError(
+        "/v1/chat/completions",
+        "$LOG_MARKER request_id=$requestId event=task_not_found model=${model.name}",
+      )
       throw IllegalStateException("No task is available for model '${model.name}'")
     }
     return task
@@ -138,20 +172,36 @@ class ApiInferenceHandler(
   private suspend fun ensureInitialized(task: Task, model: Model, requestId: String) {
     if (model.instance != null) {
       Log.d(TAG, "$LOG_MARKER request_id=$requestId event=model_already_initialized model=${model.name}")
+      HttpTrafficLogger.logDebug(
+        TAG,
+        "$LOG_MARKER request_id=$requestId event=model_already_initialized model=${model.name}",
+      )
       return
     }
     val deferred = CompletableDeferred<Unit>()
     Log.i(TAG, "$LOG_MARKER request_id=$requestId event=model_init_start model=${model.name} task=${task.id}")
+    HttpTrafficLogger.logDebug(
+      TAG,
+      "$LOG_MARKER request_id=$requestId event=model_init_start model=${model.name} task=${task.id}",
+    )
     modelManagerViewModel.initializeModel(
       context = context,
       task = task,
       model = model,
       onDone = {
         Log.i(TAG, "$LOG_MARKER request_id=$requestId event=model_init_done model=${model.name}")
+        HttpTrafficLogger.logDebug(
+          TAG,
+          "$LOG_MARKER request_id=$requestId event=model_init_done model=${model.name}",
+        )
         deferred.complete(Unit)
       },
       onError = { error ->
         Log.e(TAG, "$LOG_MARKER request_id=$requestId event=model_init_error model=${model.name} error=$error")
+        HttpTrafficLogger.logError(
+          "/v1/chat/completions",
+          "$LOG_MARKER request_id=$requestId event=model_init_error model=${model.name} error=$error",
+        )
         deferred.completeExceptionally(IllegalStateException(error))
       },
     )
@@ -167,6 +217,7 @@ class ApiInferenceHandler(
     val response = StringBuilder()
     val prompt = buildPrompt(request)
     Log.d(TAG, "$LOG_MARKER request_id=$requestId event=inference_start model=${model.name}")
+    HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER request_id=$requestId event=inference_start model=${model.name}")
 
     model.runtimeHelper.resetConversation(model = model)
     model.runtimeHelper.runInference(
@@ -186,6 +237,10 @@ class ApiInferenceHandler(
         }
       },
       onError = { error ->
+        HttpTrafficLogger.logError(
+          "/v1/chat/completions",
+          "$LOG_MARKER request_id=$requestId event=inference_error model=${model.name} error=$error",
+        )
         if (!deferred.isCompleted) {
           deferred.completeExceptionally(IllegalStateException(error))
         }
