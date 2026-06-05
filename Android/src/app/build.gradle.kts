@@ -34,7 +34,7 @@ android {
 
   defaultConfig {
     applicationId = "com.google.aiedge.gallery"
-    minSdk = 31
+    minSdk = 28
     targetSdk = 35
     versionCode = 33
     versionName = "1.0.15"
@@ -45,8 +45,12 @@ android {
         "REPLACE_WITH_YOUR_REDIRECT_SCHEME_IN_HUGGINGFACE_APP"
     manifestPlaceholders["applicationName"] = "com.google.ai.edge.gallery.GalleryApplication"
     manifestPlaceholders["appIcon"] = "@mipmap/ic_launcher"
+    resourceConfigurations += listOf("en", "zh")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    ndk {
+      abiFilters += listOf("arm64-v8a")
+    }
   }
 
   buildTypes {
@@ -56,6 +60,7 @@ android {
       signingConfig = signingConfigs.getByName("debug")
     }
   }
+
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
@@ -124,6 +129,12 @@ dependencies {
   implementation(libs.mcp.kotlin.sdk)
   implementation(libs.ktor.client.android)
   implementation(libs.ktor.client.core)
+  implementation("io.ktor:ktor-server-core-jvm:3.4.3")
+  implementation("io.ktor:ktor-server-cio-jvm:3.4.3")
+  implementation("io.ktor:ktor-server-content-negotiation-jvm:3.4.3")
+  implementation("io.ktor:ktor-serialization-kotlinx-json-jvm:3.4.3")
+  implementation("io.ktor:ktor-server-cors-jvm:3.4.3")
+  implementation("io.ktor:ktor-server-status-pages-jvm:3.4.3")
 }
 
 protobuf {

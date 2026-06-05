@@ -61,6 +61,8 @@ import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Terminal
+import com.google.ai.edge.gallery.ui.logs.HttpLogsScreen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -164,6 +166,7 @@ fun HomeScreen(
   navigateToTaskScreen: (Task) -> Unit,
   onModelsClicked: () -> Unit,
   onNotificationsClicked: () -> Unit,
+  onLogsClicked: () -> Unit,
   enableAnimation: Boolean,
   modifier: Modifier = Modifier,
   gm4: Boolean = false,
@@ -329,6 +332,24 @@ fun HomeScreen(
               }
               Spacer(modifier = Modifier.height(16.dp))
               Row(modifier = Modifier.fillMaxWidth()) {
+                SquareDrawerItem(
+                  label = "HTTP Logs",
+                  description = "View network traffic logs",
+                  icon = Icons.Rounded.Terminal,
+                  onClick = {
+                    scope.launch { drawerState.close() }
+                    onLogsClicked()
+                  },
+                  modifier = Modifier.weight(1f),
+                  iconBrush =
+                    linearGradient(
+                      colors =
+                        listOf(
+                          Color(0xFFFF9800),
+                          Color(0xFFF57C00),
+                        )
+                    ),
+                )
               }
             }
           }

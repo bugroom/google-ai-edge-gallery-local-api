@@ -22,6 +22,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
@@ -45,6 +46,7 @@ import com.google.ai.edge.gallery.data.KEY_MODEL_TOTAL_BYTES
 import com.google.ai.edge.gallery.data.KEY_MODEL_UNZIPPED_DIR
 import com.google.ai.edge.gallery.data.KEY_MODEL_URL
 import com.google.ai.edge.gallery.data.TMP_FILE_EXT
+import com.google.ai.edge.gallery.data.HttpTrafficLogger
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
@@ -135,6 +137,28 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
               Log.d(TAG, "Using access token: ${accessToken.subSequence(0, 10)}...")
               connection.setRequestProperty("Authorization", "Bearer $accessToken")
             }
+            
+            // Set timeouts
+            connection.connectTimeout = 60000  // 60 seconds
+            connection.readTimeout = 120000  // 2 minutes
+            Log.d(TAG, "Timeouts set: connect=60s, read=120s")
+            Log.d(TAG, "Download URL: ${file.url}")
+            
+            // Log HTTP request
+            HttpTrafficLogger.logRequest(
+              method = "GET",
+              url = file.url,
+              headers = if (accessToken != null) "Authorization: Bearer ***" else ""
+            )
+            
+            // Check network connectivity
+            try {
+              val connectivityManager = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+              val networkInfo = connectivityManager.activeNetworkInfo
+              Log.d(TAG, "Network info: ${networkInfo?.typeName}, connected: ${networkInfo?.isConnected}")
+            } catch (e: Exception) {
+              Log.e(TAG, "Failed to check network info: ${e.message}")
+            }
 
             // Prepare output file's dir.
             val outputDir =
@@ -165,6 +189,13 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
             }
             connection.connect()
             Log.d(TAG, "response code: ${connection.responseCode}")
+            
+            // Log HTTP response
+            HttpTrafficLogger.logResponse(
+              url = file.url,
+              responseCode = connection.responseCode,
+              responseBody = "Download started, Content-Length: ${connection.contentLength}"
+            )
 
             if (
               connection.responseCode == HttpURLConnection.HTTP_OK ||
