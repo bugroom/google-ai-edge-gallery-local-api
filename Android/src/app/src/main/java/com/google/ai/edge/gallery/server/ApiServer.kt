@@ -20,18 +20,25 @@ import android.content.Context
 import android.util.Log
 import com.google.ai.edge.gallery.data.ApiServerConfig
 import com.google.ai.edge.gallery.data.AuthType
+import com.google.ai.edge.gallery.data.api.ChatCompletionRequest
+import com.google.ai.edge.gallery.data.api.ErrorResponse
 import com.google.ai.edge.gallery.data.api.HealthResponse
-import io.ktor.server.application.Application
+import com.google.ai.edge.gallery.data.api.ModelsResponse
+import com.google.ai.edge.gallery.data.api.toApiEngine
+import com.google.ai.edge.gallery.data.api.toApiModel
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.application.install
+import io.ktor.http.HttpHeaders
 import io.ktor.server.engine.ApplicationEngine
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.cio.CIO
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.plugins.cors.routing.CORS
+import io.ktor.server.request.header
 import io.ktor.server.request.path
+import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -46,13 +53,15 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
 
 private const val TAG = "ApiServer"
+private const val LOG_MARKER = "LOCAL_API"
 
 /**
  * Local API server for serving model inference
  */
 class ApiServer(
     private val context: Context,
-    private val config: ApiServerConfig
+    private val config: ApiServerConfig,
+    private val inferenceHandler: ApiInferenceHandler,
 ) {
     private var server: ApplicationEngine? = null
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -68,7 +77,7 @@ class ApiServer(
             return
         }
 
-try {
+        try {
             startTime.set(System.currentTimeMillis())
             
             val embedded = embeddedServer(CIO, port = config.port, host = config.host) {
@@ -95,63 +104,84 @@ try {
                 }
 
                 install(StatusPages) {
+                    exception<IllegalArgumentException> { call, cause ->
+                        Log.w(TAG, "$LOG_MARKER event=request_bad_request path=${call.request.path()} error=${cause.message}")
+                        call.respond(
+                            HttpStatusCode.BadRequest,
+                            ErrorResponse(
+                                error = cause.message ?: "Bad request",
+                                type = "bad_request",
+                            ),
+                        )
+                    }
                     exception<Exception> { call, cause ->
-                        Log.e(TAG, "Request error: ${cause.message}", cause)
+                        Log.e(TAG, "$LOG_MARKER event=request_error path=${call.request.path()} error=${cause.message}", cause)
                         call.respond(
                             HttpStatusCode.InternalServerError,
-                            mapOf("error" to (cause.message ?: "Internal error"))
+                            ErrorResponse(
+                                error = cause.message ?: "Internal error",
+                                type = "internal_error",
+                            ),
                         )
                     }
                 }
 
                 routing {
-                    // Health check endpoint
                     get("/health") {
+                        if (!call.authorize()) return@get
+                        currentConnections.incrementAndGet()
+                        Log.d(TAG, "$LOG_MARKER event=health_check path=/health")
                         call.respond(
                             HealthResponse(
                                 status = "ok",
                                 uptime = System.currentTimeMillis() - startTime.get(),
                                 connections = currentConnections.get().toInt(),
-                                loaded_model = null  // TODO: Get loaded model
+                                loaded_model = null,
                             )
                         )
+                        currentConnections.decrementAndGet()
                     }
 
-                    // OpenAI compatible API
                     route("/v1") {
                         get("/models") {
+                            if (!call.authorize()) return@get
+                            currentConnections.incrementAndGet()
+                            val models = inferenceHandler.getDownloadedLlmModels()
                             call.respond(
-                                mapOf(
-                                    "object" to "list",
-                                    "data" to emptyList<Any>()  // TODO: Get downloaded models
-                                )
+                                ModelsResponse(data = models.map { it.toApiModel() })
                             )
+                            currentConnections.decrementAndGet()
                         }
 
                         post("/chat/completions") {
-                            call.respond(
-                                mapOf(
-                                    "id" to "chatcmpl-placeholder",
-                                    "object" to "chat.completion",
-                                    "created" to System.currentTimeMillis() / 1000,
-                                    "model" to "placeholder",
-                                    "choices" to emptyList<Any>(),
-                                    "usage" to mapOf(
-                                        "prompt_tokens" to 0,
-                                        "completion_tokens" to 0,
-                                        "total_tokens" to 0
-                                    )
+                            if (!call.authorize()) return@post
+                            currentConnections.incrementAndGet()
+                            val request = call.receive<ChatCompletionRequest>()
+                            if (request.stream) {
+                                call.respond(
+                                    HttpStatusCode.BadRequest,
+                                    ErrorResponse(
+                                        error = "Streaming responses are not supported yet",
+                                        type = "unsupported_feature",
+                                    ),
                                 )
-                            )
+                            } else {
+                                call.respond(inferenceHandler.handleChatCompletion(request))
+                            }
+                            currentConnections.decrementAndGet()
                         }
 
                         get("/engines") {
+                            if (!call.authorize()) return@get
+                            currentConnections.incrementAndGet()
+                            val models = inferenceHandler.getDownloadedLlmModels()
                             call.respond(
                                 mapOf(
                                     "object" to "list",
-                                    "data" to emptyList<Any>()  // TODO: Get engines
+                                    "data" to models.map { it.toApiEngine() }
                                 )
                             )
+                            currentConnections.decrementAndGet()
                         }
                     }
                 }
@@ -159,9 +189,9 @@ try {
 
             server = embedded.engine
             server?.start(wait = false)
-            Log.i(TAG, "API server started on ${config.host}:${config.port}")
+            Log.i(TAG, "$LOG_MARKER event=server_started host=${config.host} port=${config.port}")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start server: ${e.message}", e)
+            Log.e(TAG, "$LOG_MARKER event=server_start_failed error=${e.message}", e)
             server = null
             throw e
         }
@@ -173,7 +203,25 @@ try {
     fun stop() {
         server?.stop(1000, 5000)
         server = null
-        Log.i(TAG, "API server stopped")
+        Log.i(TAG, "$LOG_MARKER event=server_stopped")
+    }
+
+    private suspend fun ApplicationCall.authorize(): Boolean {
+        if (config.authType == AuthType.NONE) return true
+        val authorization = request.header(HttpHeaders.Authorization)
+        val expected = "Bearer ${config.apiKey}"
+        val authorized = config.apiKey.isNotBlank() && authorization == expected
+        if (!authorized) {
+            Log.w(TAG, "$LOG_MARKER event=auth_failed path=${request.path()} auth_type=${config.authType}")
+            respond(
+                HttpStatusCode.Unauthorized,
+                ErrorResponse(
+                    error = "Unauthorized",
+                    type = "authentication_error",
+                ),
+            )
+        }
+        return authorized
     }
 
     /**
@@ -208,11 +256,4 @@ try {
     fun decrementConnections() {
         currentConnections.decrementAndGet()
     }
-}
-
-/**
- * Application plugin configuration
- */
-fun Application.configureApiServer() {
-    // Additional server configuration if needed
 }

@@ -22,6 +22,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.data.ApiServerConfig
 import com.google.ai.edge.gallery.data.ApiServerConfigManager
+import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,11 +67,17 @@ class ApiServerViewModel(application: Application) : AndroidViewModel(applicatio
     /**
      * Start the API server
      */
-    fun startServer() {
+    fun startServer(modelManagerViewModel: ModelManagerViewModel) {
         viewModelScope.launch {
             try {
                 val config = configManager.configFlow.value
-                apiServer = ApiServer(getApplication(), config)
+                val inferenceHandler = ApiInferenceHandler(
+                    context = getApplication(),
+                    modelManagerViewModel = modelManagerViewModel,
+                    maxConcurrent = config.maxConcurrent,
+                    requestTimeoutMs = config.requestTimeout,
+                )
+                apiServer = ApiServer(getApplication(), config, inferenceHandler)
                 apiServer?.start()
                 _serverStatus.value = ServerStatus.Running
                 
@@ -82,9 +89,9 @@ class ApiServerViewModel(application: Application) : AndroidViewModel(applicatio
                 )
                 _serverInfo.value = info
                 
-                Log.i(TAG, "API server started: ${config.host}:${config.port}")
+                Log.i(TAG, "LOCAL_API event=viewmodel_server_started host=${config.host} port=${config.port}")
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to start server: ${e.message}", e)
+                Log.e(TAG, "LOCAL_API event=viewmodel_server_start_failed error=${e.message}", e)
                 _serverStatus.value = ServerStatus.Error(e.message ?: "Unknown error")
                 apiServer = null
             }
@@ -101,12 +108,12 @@ class ApiServerViewModel(application: Application) : AndroidViewModel(applicatio
                 apiServer = null
                 _serverStatus.value = ServerStatus.Stopped
                 _serverInfo.value = null
-                Log.i(TAG, "API server stopped")
+                Log.i(TAG, "LOCAL_API event=viewmodel_server_stopped")
                 
                 // Update config to disabled
                 configManager.updateConfig { it.copy(enabled = false) }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to stop server: ${e.message}", e)
+                Log.e(TAG, "LOCAL_API event=viewmodel_server_stop_failed error=${e.message}", e)
                 _serverStatus.value = ServerStatus.Error(e.message ?: "Unknown error")
             }
         }

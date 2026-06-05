@@ -361,6 +361,7 @@ fun SettingsDialog(
 
   if (showApiServerSettings) {
     ApiServerSettingsDialog(
+      modelManagerViewModel = modelManagerViewModel,
       onDismissed = { showApiServerSettings = false }
     )
   }

@@ -34,8 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.ai.edge.gallery.ui.settings.ApiServerSettingsScreen
+import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 
 /**
  * Dialog wrapper for API server settings
@@ -43,6 +43,7 @@ import com.google.ai.edge.gallery.ui.settings.ApiServerSettingsScreen
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ApiServerSettingsDialog(
+    modelManagerViewModel: ModelManagerViewModel,
     onDismissed: () -> Unit
 ) {
     Dialog(
@@ -68,7 +69,7 @@ fun ApiServerSettingsDialog(
                     style = MaterialTheme.typography.headlineSmall
                 )
                 
-                ApiServerSettingsScreen()
+                ApiServerSettingsScreen(modelManagerViewModel = modelManagerViewModel)
                 
                 Row(
                     modifier = Modifier

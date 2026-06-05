@@ -62,12 +62,14 @@ import com.google.ai.edge.gallery.data.AuthType
 import com.google.ai.edge.gallery.data.displayName
 import com.google.ai.edge.gallery.server.ApiServerViewModel
 import com.google.ai.edge.gallery.server.ServerStatus
+import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 
 /**
  * API Server Settings Screen
  */
 @Composable
 fun ApiServerSettingsScreen(
+    modelManagerViewModel: ModelManagerViewModel,
     viewModel: ApiServerViewModel = hiltViewModel()
 ) {
     val serverStatus by viewModel.serverStatus.collectAsState()
@@ -110,6 +112,11 @@ fun ApiServerSettingsScreen(
                 onCheckedChange = { enabled: Boolean ->
                     viewModel.updateConfig { currentConfig: ApiServerConfig ->
                         currentConfig.copy(enabled = enabled)
+                    }
+                    if (enabled) {
+                        viewModel.startServer(modelManagerViewModel)
+                    } else {
+                        viewModel.stopServer()
                     }
                 }
             )
