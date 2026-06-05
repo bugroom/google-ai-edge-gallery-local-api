@@ -1,87 +1,268 @@
-# Google AI Edge Gallery ✨
+# Google AI Edge Gallery Local API Mod
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/google-ai-edge/gallery)](https://github.com/google-ai-edge/gallery/releases)
+这是基于 Google AI Edge Gallery 的 Android 魔改版，核心目标是把原本只能在 App 内使用的本地 LLM 能力，扩展成可由其他客户端调用的本地 API 服务。
 
-**Explore, Experience, and Evaluate the Future of On-Device Generative AI with Google AI Edge.**
+上游项目：`https://github.com/google-ai-edge/gallery`
 
-AI Edge Gallery is the premier destination for running the world's most powerful open-source Large Language Models (LLMs) on your mobile device. Experience high-performance Generative AI directly on your hardware—fully offline, private, and lightning-fast.
+当前仓库：`https://github.com/bugroom/google-ai-edge-gallery-local-api`
 
-**Now Featuring: Gemma 4**
+## 当前状态
 
-The latest version brings official support for the newly released Gemma 4 family. As the centerpiece of this release, Gemma 4 allows you to test the cutting edge of on-device AI. Experience advanced reasoning, logic, and creative capabilities without ever sending your data to a server.
+- Release APK 已可构建通过。
+- Android 最低版本已下调到 Android 9.0。
+- 模型下载源保持官方 Hugging Face 源。
+- 已新增本地 API Server 设置入口。
+- 已接入 OpenAI 兼容接口骨架和 LiteRT-LM 推理链路。
+- 已添加统一日志标记 `LOCAL_API`，方便后续排查问题。
+- 真机端到端调用仍建议结合实际已下载模型继续测试。
 
+## 主要魔改内容
 
-| **Install the app today from Google Play** | **Install the app today from App Store** |
-| :--- | :--- |
-| <a href='https://play.google.com/store/apps/details?id=com.google.ai.edge.gallery'><img alt='Get it on Google Play' height="120" src='https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png'/></a> | <a href="https://apps.apple.com/us/app/google-ai-edge-gallery/id6749645337?itscg=30200&itsct=apps_box_badge&mttnsubad=6749645337" style="display: inline-block;"> <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/en-us?releaseDate=1771977600" alt="Download on the App Store" style="width: 246px; height: 90px; vertical-align: middle; object-fit: contain;" /></a> |
+### Android 兼容性
 
-For users without Google Play access, install the apk from the [**latest release**](https://github.com/google-ai-edge/gallery/releases/latest/)
+- `minSdk` 从 31 调整为 28，支持 Android 9.0 及以上设备。
+- 新增 `ApiCompatibilityHelper`，用于处理部分 Android API 版本兼容逻辑。
+- Release 构建限制 `arm64-v8a`，降低 APK 体积。
 
+### 中文化
 
-## App Preview
+- 新增 `values-zh/strings.xml` 中文资源。
+- 保留英文资源，构建时包含 `en` 和 `zh`。
 
-<img width="480" alt="01" src="https://github.com/user-attachments/assets/a809ad78-aef4-4169-91ee-de7213cbb3bd" />
-<img width="480" alt="02" src="https://github.com/user-attachments/assets/1effd10d-f45a-4f7b-9435-f50f1bdd36b6" />
-<img width="480" alt="03" src="https://github.com/user-attachments/assets/e5089e41-2c18-4fbe-9011-ebe9e5a02044" />
-<img width="480" alt="04" src="https://github.com/user-attachments/assets/0f39d3ed-7403-4606-a7c6-b2c7e51ba6c1" />
-<img width="480" alt="05" src="https://github.com/user-attachments/assets/8c229e96-b598-4735-9f60-e96907e1d5d5" />
-<img width="480" alt="06" src="https://github.com/user-attachments/assets/ac9fb77b-81de-4197-9ed3-f6fe58290b3e" />
-<img width="480" alt="07" src="https://github.com/user-attachments/assets/bc86ba07-2eaf-49b1-980f-8a87a85c596f" />
-<img width="480" alt="08" src="https://github.com/user-attachments/assets/061564ed-030f-4630-810b-13a7863fce4c" />
+### 下载与日志
 
-## ✨ Core Features
+- 模型下载源保留官方 Hugging Face 源。
+- 新增 HTTP 下载日志能力。
+- 新增日志查看页面，便于复制和排查下载问题。
 
-* **Agent Skills**: Transform your LLM from a conversationalist into a proactive assistant. Use the Agent Skills tile to augment model capabilities with tools like Wikipedia for fact-grounding, interactive maps, and rich visual summary cards. You can even load modular skills from a URL or browse community contributions on GitHub Discussions.
+### 本地 API Server
 
-* **AI Chat with Thinking Mode**: Engage in fluid, multi-turn conversations and toggle the new Thinking Mode to peek "under the hood." This feature allows you to see the model’s step-by-step reasoning process, which is perfect for understanding complex problem-solving. Note: Thinking Mode currently works with supported models, starting with the Gemma 4 family.
+- 新增本地 API 服务配置：启用状态、监听地址、端口、认证方式、API Key、并发数、队列大小、请求超时。
+- 新增 API 设置入口：Settings -> 本地 API 服务。
+- 新增 Ktor CIO HTTP Server。
+- 新增 API Key 鉴权：`Authorization: Bearer <apiKey>`。
+- 新增 CORS 支持。
+- 新增 OpenAI 兼容接口：
+  - `GET /health`
+  - `GET /v1/models`
+  - `GET /v1/engines`
+  - `POST /v1/chat/completions`
+- `/v1/models` 和 `/v1/engines` 返回已下载的 LLM 模型。
+- `/v1/chat/completions` 已接入现有 LiteRT-LM 推理流程。
 
-* **Ask Image**: Use multimodal power to identify objects, solve visual puzzles, or get detailed descriptions using your device’s camera or photo gallery.
+### 可观测性
 
-* **Audio Scribe**: Transcribe and translate voice recordings into text in real-time using high-efficiency on-device language models.
+本地 API 相关日志统一使用 `LOCAL_API` 标记，并尽量包含以下字段：
 
-* **Prompt Lab**: A dedicated workspace to test different prompts and single-turn use cases with granular control over model parameters like temperature and top-k.
+- `request_id`
+- `event`
+- `model`
+- `path`
+- `duration_ms`
+- `error`
+- `auth_type`
 
-* **Mobile Actions**: Unlock offline device controls and automated tasks powered entirely by a finetune of FunctionGemma 270m.
+可通过 Logcat 过滤：
 
-* **Tiny Garden**: A fun, experimental mini-game that uses natural language to plant and harvest a virtual garden using a finetune of FunctionGemma 270m.
+```bash
+# Filter local API logs
+adb logcat | grep LOCAL_API
+```
 
-* **Model Management & Benchmark**: Gallery is a flexible sandbox for a wide variety of open-source models. Easily download models from the list or load your own custom models. Manage your model library effortlessly and run benchmark tests to understand exactly how each model performs on your specific hardware.
+## API 使用说明
 
-* **100% On-Device Privacy**: All model inferences happen directly on your device hardware. No internet is required, ensuring total privacy for your prompts, images, and sensitive data.
+### 1. 在 App 内启动服务
 
-## 🏁 Get Started in Minutes!
+1. 安装并打开 App。
+2. 下载一个支持 LLM 的模型。
+3. 进入 `Settings`。
+4. 打开 `本地 API 服务`。
+5. 配置监听地址和端口。
+6. 如需外部设备访问，选择 `0.0.0.0`。
+7. 如启用 API Key，复制生成的 Key。
 
-1. **Check OS Requirement**: Android 12 and up, and iOS 17 and up.
-2.  **Download the App:**
-    - Install the app from [Google Play](https://play.google.com/store/apps/details?id=com.google.ai.edge.gallery) or [App Store](https://apps.apple.com/us/app/google-ai-edge-gallery/id6749645337).
-    - For users without Google Play access: install the apk from the [**latest release**](https://github.com/google-ai-edge/gallery/releases/latest/)
-3.  **Install & Explore:** For detailed installation instructions (including for corporate devices) and a full user guide, head over to our [**Project Wiki**](https://github.com/google-ai-edge/gallery/wiki)!
+默认配置：
 
-## 🛠️ Technology Highlights
+- Host: `127.0.0.1`
+- Port: `8080`
+- Auth: `NONE`
 
-*   **Google AI Edge:** Core APIs and tools for on-device ML.
-*   **LiteRT:** Lightweight runtime for optimized model execution.
-*   **Hugging Face Integration:** For model discovery and download.
+局域网访问时，手机和客户端设备需要位于同一网络。使用 `0.0.0.0` 监听后，客户端应访问手机的局域网 IP。
 
-## ⌨️ Development
+### 2. 健康检查
 
-Check out the [development notes](DEVELOPMENT.md) for instructions about how to build the app locally.
+```bash
+# Check API server health
+curl http://127.0.0.1:8080/health
+```
 
-## 🤝 Feedback
+响应示例：
 
-This is an **experimental Beta release**, and your input is crucial!
+```json
+{
+  "status": "ok",
+  "uptime": 12345,
+  "connections": 1,
+  "loaded_model": null
+}
+```
 
-*   🐞 **Found a bug?** [Report it here!](https://github.com/google-ai-edge/gallery/issues/new?assignees=&labels=bug&template=bug_report.md&title=%5BBUG%5D)
-*   💡 **Have an idea?** [Suggest a feature!](https://github.com/google-ai-edge/gallery/issues/new?assignees=&labels=enhancement&template=feature_request.md&title=%5BFEATURE%5D)
+### 3. 获取模型列表
 
-## 📄 License
+```bash
+# List downloaded LLM models
+curl http://127.0.0.1:8080/v1/models
+```
 
-Licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
+启用 API Key 后：
 
-## 🔗 Useful Links
+```bash
+# List models with API key
+curl http://127.0.0.1:8080/v1/models \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
 
-*   [**Project Wiki (Detailed Guides)**](https://github.com/google-ai-edge/gallery/wiki)
-*   [Hugging Face LiteRT Community](https://huggingface.co/litert-community)
-*   [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM)
-*   [Google AI Edge Documentation](https://ai.google.dev/edge)
+响应示例：
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "model-name",
+      "object": "model",
+      "owned_by": "google",
+      "created": 1780680000
+    }
+  ]
+}
+```
+
+### 4. 聊天补全
+
+```bash
+# Call chat completions
+curl http://127.0.0.1:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "model-name",
+    "messages": [
+      {"role": "user", "content": "你好，介绍一下你自己"}
+    ],
+    "temperature": 0.7,
+    "max_tokens": 1024
+  }'
+```
+
+启用 API Key 后：
+
+```bash
+# Call chat completions with API key
+curl http://127.0.0.1:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "model": "model-name",
+    "messages": [
+      {"role": "system", "content": "你是一个本地离线助手"},
+      {"role": "user", "content": "用三句话说明端侧模型的优势"}
+    ]
+  }'
+```
+
+响应格式兼容 OpenAI Chat Completions：
+
+```json
+{
+  "id": "chatcmpl-uuid",
+  "object": "chat.completion",
+  "created": 1780680000,
+  "model": "model-name",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "..."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 10,
+    "completion_tokens": 20,
+    "total_tokens": 30
+  }
+}
+```
+
+## 构建说明
+
+开发环境位于 Android 工程目录：
+
+```bash
+# Enter Android project
+cd Android/src
+```
+
+编译 Kotlin：
+
+```bash
+# Compile release Kotlin sources
+./gradlew :app:compileReleaseKotlin
+```
+
+构建 Release APK：
+
+```bash
+# Build release APK
+./gradlew :app:assembleRelease
+```
+
+生成文件：
+
+`Android/src/app/build/outputs/apk/release/app-release.apk`
+
+## 故障排查
+
+### 服务无法启动
+
+- 检查端口是否被占用。
+- 检查监听地址是否为 `127.0.0.1` 或 `0.0.0.0`。
+- 使用 Logcat 搜索 `LOCAL_API event=server_start_failed`。
+
+### 401 Unauthorized
+
+- 检查是否启用了 API Key。
+- 检查请求头是否包含 `Authorization: Bearer YOUR_API_KEY`。
+- 使用 Logcat 搜索 `LOCAL_API event=auth_failed`。
+
+### 模型列表为空
+
+- 先在 App 内下载一个 LLM 模型。
+- 仅下载成功且 `isLlm = true` 的模型会返回。
+- 使用 Logcat 搜索 `LOCAL_API event=models_list`。
+
+### 聊天补全失败
+
+- 确认 `model` 参数等于 `/v1/models` 返回的 `id`。
+- 确认模型已下载成功。
+- 查看 `LOCAL_API request_id=<id>` 相关日志。
+- 重点搜索 `model_init_error`、`inference_start`、`chat_error`、`chat_timeout`。
+
+## 当前限制
+
+- `stream=true` 目前会返回不支持错误。
+- 多模态输入暂未开放为 API 参数。
+- Token 统计为估算值。
+- 真机性能取决于设备、模型大小和加速器配置。
+- 本地 API 服务随 App 进程运行，App 进程被系统回收后服务会停止。
+
+## 变更记录
+
+- `feat: add local API server support`
+- `feat: connect local API server to LLM inference`
+
+## License
+
+本项目基于 Google AI Edge Gallery 修改，保留上游 Apache License 2.0 授权。详见 `LICENSE`。
