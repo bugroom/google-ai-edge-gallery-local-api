@@ -1,6 +1,8 @@
-# Google AI Edge Gallery Local API Mod
+# Google AI Edge Gallery 本地 API 魔改版
 
-这是基于 Google AI Edge Gallery 的 Android 魔改版，核心目标是把原本只能在 App 内使用的本地 LLM 能力，扩展成可由其他客户端调用的本地 API 服务。
+## 项目介绍
+
+这是基于 Google AI Edge Gallery 的 Android 魔改版，核心目标是把原本只能在 App 内使用的本地 LLM 能力，扩展成可由其他客户端调用的本地 API 服务。项目支持在手机端下载模型、选择默认模型、配置推理参数和推理后端，并通过 OpenAI 兼容接口向局域网或本机客户端提供推理能力。
 
 上游项目：`https://github.com/google-ai-edge/gallery`
 
