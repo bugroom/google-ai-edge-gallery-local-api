@@ -62,6 +62,7 @@ import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Wifi
 import com.google.ai.edge.gallery.ui.logs.HttpLogsScreen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -167,6 +168,7 @@ fun HomeScreen(
   onModelsClicked: () -> Unit,
   onNotificationsClicked: () -> Unit,
   onLogsClicked: () -> Unit,
+  onApiServerSettingsClicked: () -> Unit,
   enableAnimation: Boolean,
   modifier: Modifier = Modifier,
   gm4: Boolean = false,
@@ -347,6 +349,25 @@ fun HomeScreen(
                         listOf(
                           Color(0xFFFF9800),
                           Color(0xFFF57C00),
+                        )
+                    ),
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                SquareDrawerItem(
+                  label = "API Server",
+                  description = "Configure local API server",
+                  icon = Icons.Rounded.Wifi,
+                  onClick = {
+                    scope.launch { drawerState.close() }
+                    onApiServerSettingsClicked()
+                  },
+                  modifier = Modifier.weight(1f),
+                  iconBrush =
+                    linearGradient(
+                      colors =
+                        listOf(
+                          Color(0xFF4CAF50),
+                          Color(0xFF2E7D32),
                         )
                     ),
                 )

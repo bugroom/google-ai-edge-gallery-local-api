@@ -106,7 +106,6 @@ fun SettingsDialog(
   val focusRequester = remember { FocusRequester() }
   val interactionSource = remember { MutableInteractionSource() }
   var showTos by remember { mutableStateOf(false) }
-  var showApiServerSettings by remember { mutableStateOf(false) }
 
   Dialog(onDismissRequest = onDismissed) {
     val focusManager = LocalFocusManager.current
@@ -292,17 +291,6 @@ fun SettingsDialog(
             }
           }
 
-          // Local API Server
-          Column(modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
-            Text(
-              "本地API服务",
-              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
-            )
-            OutlinedButton(onClick = { showApiServerSettings = true }) {
-              Text("配置本地API服务器")
-            }
-          }
-
           // Third party licenses.
           Column(modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
             Text(
@@ -357,13 +345,6 @@ fun SettingsDialog(
 
   if (showTos) {
     AppTosDialog(onTosAccepted = { showTos = false }, viewingMode = true)
-  }
-
-  if (showApiServerSettings) {
-    ApiServerSettingsDialog(
-      modelManagerViewModel = modelManagerViewModel,
-      onDismissed = { showApiServerSettings = false }
-    )
   }
 }
 

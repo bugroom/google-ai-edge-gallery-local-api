@@ -84,6 +84,7 @@ import com.google.ai.edge.gallery.ui.common.chat.ModelDownloadStatusInfoPanel
 import com.google.ai.edge.gallery.ui.home.HomeScreen
 import com.google.ai.edge.gallery.ui.home.PromoScreenGm4
 import com.google.ai.edge.gallery.ui.logs.HttpLogsScreen
+import com.google.ai.edge.gallery.ui.settings.ApiServerSettingsScreen
 import com.google.ai.edge.gallery.ui.modelmanager.GlobalModelManager
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManager
@@ -101,6 +102,7 @@ private const val ROUTE_BENCHMARK = "benchmark"
 private const val ROUTE_MODEL_MANAGER = "model_manager"
 private const val ROUTE_NOTIFICATIONS = "notifications"
 private const val ROUTE_HTTP_LOGS = "http_logs"
+private const val ROUTE_API_SERVER_SETTINGS = "api_server_settings"
 private const val ENTER_ANIMATION_DURATION_MS = 500
 private val ENTER_ANIMATION_EASING = EaseOutExpo
 private const val ENTER_ANIMATION_DELAY_MS = 100
@@ -216,6 +218,7 @@ fun GalleryNavHost(
             onModelsClicked = { navController.navigate(ROUTE_MODEL_MANAGER) },
             onNotificationsClicked = { navController.navigate(ROUTE_NOTIFICATIONS) },
             onLogsClicked = { navController.navigate(ROUTE_HTTP_LOGS) },
+            onApiServerSettingsClicked = { navController.navigate(ROUTE_API_SERVER_SETTINGS) },
             gm4 = true,
           )
         }
@@ -448,6 +451,15 @@ fun GalleryNavHost(
       exitTransition = { slideDownExit() },
     ) {
       HttpLogsScreen(onBack = { navController.navigateUp() })
+    }
+
+    // API Server Settings page.
+    composable(
+      route = ROUTE_API_SERVER_SETTINGS,
+      enterTransition = { slideUpEnter() },
+      exitTransition = { slideDownExit() },
+    ) {
+      ApiServerSettingsScreen(modelManagerViewModel = modelManagerViewModel)
     }
 
     // Benchmark creation page.
