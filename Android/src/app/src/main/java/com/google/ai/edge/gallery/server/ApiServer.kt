@@ -21,305 +21,429 @@ import android.util.Log
 import com.google.ai.edge.gallery.data.ApiServerConfig
 import com.google.ai.edge.gallery.data.AuthType
 import com.google.ai.edge.gallery.data.HttpTrafficLogger
+import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.api.ChatCompletionRequest
 import com.google.ai.edge.gallery.data.api.ErrorResponse
 import com.google.ai.edge.gallery.data.api.HealthResponse
 import com.google.ai.edge.gallery.data.api.ModelsResponse
 import com.google.ai.edge.gallery.data.api.toApiEngine
 import com.google.ai.edge.gallery.data.api.toApiModel
-import io.ktor.server.application.ApplicationCall
-import io.ktor.server.application.call
-import io.ktor.server.application.install
-import io.ktor.http.HttpHeaders
-import io.ktor.server.engine.ApplicationEngine
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.cio.CIO
-import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.server.plugins.statuspages.StatusPages
-import io.ktor.server.plugins.cors.routing.CORS
-import io.ktor.server.request.header
-import io.ktor.server.request.path
-import io.ktor.server.request.receive
-import io.ktor.server.response.respond
-import io.ktor.server.routing.get
-import io.ktor.server.routing.post
-import io.ktor.server.routing.route
-import io.ktor.server.routing.routing
-import io.ktor.serialization.kotlinx.json.json
-import io.ktor.http.HttpStatusCode
-import kotlinx.serialization.json.Json
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import java.io.BufferedWriter
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.OutputStreamWriter
+import java.net.BindException
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.net.SocketException
+import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 private const val TAG = "ApiServer"
 private const val LOG_MARKER = "LOCAL_API"
 
-/**
- * Local API server for serving model inference
- */
 class ApiServer(
     private val context: Context,
     private val config: ApiServerConfig,
     private val inferenceHandler: ApiInferenceHandler,
 ) {
-    private var server: ApplicationEngine? = null
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val json = Json {
+        prettyPrint = true
+        isLenient = true
+        ignoreUnknownKeys = true
+    }
     private val startTime = AtomicLong(0)
     private val currentConnections = AtomicLong(0)
+    private val executor: ExecutorService = Executors.newCachedThreadPool()
 
-    /**
-     * Start the API server
-     */
+    @Volatile private var serverSocket: ServerSocket? = null
+    @Volatile private var acceptThread: Thread? = null
+    @Volatile private var running = false
+
     fun start() {
-        if (server != null) {
-            Log.w(TAG, "Server is already running")
+        if (running) {
+            Log.w(TAG, "$LOG_MARKER event=server_already_running")
             return
         }
 
         try {
-            startTime.set(System.currentTimeMillis())
-            HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER event=server_starting host=${config.host} port=${config.port}")
-            
-            val embedded = embeddedServer(CIO, port = config.port, host = config.host) {
-                install(ContentNegotiation) {
-                    json(Json {
-                        prettyPrint = true
-                        isLenient = true
-                        ignoreUnknownKeys = true
-                    })
-                }
-
-                install(CORS) {
-                    allowMethod(io.ktor.http.HttpMethod.Options)
-                    allowMethod(io.ktor.http.HttpMethod.Get)
-                    allowMethod(io.ktor.http.HttpMethod.Post)
-                    allowMethod(io.ktor.http.HttpMethod.Put)
-                    allowMethod(io.ktor.http.HttpMethod.Delete)
-                    allowHeader(io.ktor.http.HttpHeaders.ContentType)
-                    allowHeader(io.ktor.http.HttpHeaders.Authorization)
-                    allowHeader(io.ktor.http.HttpHeaders.AccessControlAllowOrigin)
-                    allowCredentials = true
-                    allowNonSimpleContentTypes = true
-                    anyHost()
-                }
-
-                install(StatusPages) {
-                    exception<IllegalArgumentException> { call, cause ->
-                        Log.w(TAG, "$LOG_MARKER event=request_bad_request path=${call.request.path()} error=${cause.message}")
-                        HttpTrafficLogger.logError(
-                            call.request.path(),
-                            "$LOG_MARKER event=request_bad_request error=${cause.message}",
-                        )
-                        call.respond(
-                            HttpStatusCode.BadRequest,
-                            ErrorResponse(
-                                error = cause.message ?: "Bad request",
-                                type = "bad_request",
-                            ),
-                        )
-                    }
-                    exception<Exception> { call, cause ->
-                        Log.e(TAG, "$LOG_MARKER event=request_error path=${call.request.path()} error=${cause.message}", cause)
-                        HttpTrafficLogger.logError(
-                            call.request.path(),
-                            "$LOG_MARKER event=request_error error=${cause.message}",
-                        )
-                        call.respond(
-                            HttpStatusCode.InternalServerError,
-                            ErrorResponse(
-                                error = cause.message ?: "Internal error",
-                                type = "internal_error",
-                            ),
-                        )
-                    }
-                }
-
-                routing {
-                    get("/health") {
-                        if (!call.authorize()) return@get
-                        currentConnections.incrementAndGet()
-                        try {
-                            HttpTrafficLogger.logRequest("GET", "/health", call.safeHeaders())
-                            Log.d(TAG, "$LOG_MARKER event=health_check path=/health")
-                            call.respond(
-                                HealthResponse(
-                                    status = "ok",
-                                    uptime = System.currentTimeMillis() - startTime.get(),
-                                    connections = currentConnections.get().toInt(),
-                                    loaded_model = null,
-                                )
-                            )
-                            HttpTrafficLogger.logResponse("/health", HttpStatusCode.OK.value, "$LOG_MARKER event=health_ok")
-                        } finally {
-                            currentConnections.decrementAndGet()
-                        }
-                    }
-
-                    route("/v1") {
-                        get("/models") {
-                            if (!call.authorize()) return@get
-                            currentConnections.incrementAndGet()
-                            try {
-                                HttpTrafficLogger.logRequest("GET", "/v1/models", call.safeHeaders())
-                                val models = inferenceHandler.getDownloadedLlmModels()
-                                call.respond(
-                                    ModelsResponse(data = models.map { it.toApiModel() })
-                                )
-                                HttpTrafficLogger.logResponse(
-                                    "/v1/models",
-                                    HttpStatusCode.OK.value,
-                                    "$LOG_MARKER event=models_ok count=${models.size}",
-                                )
-                            } finally {
-                                currentConnections.decrementAndGet()
-                            }
-                        }
-
-                        post("/chat/completions") {
-                            if (!call.authorize()) return@post
-                            currentConnections.incrementAndGet()
-                            try {
-                                HttpTrafficLogger.logRequest("POST", "/v1/chat/completions", call.safeHeaders())
-                                val request = call.receive<ChatCompletionRequest>()
-                                if (request.stream) {
-                                    call.respond(
-                                        HttpStatusCode.BadRequest,
-                                        ErrorResponse(
-                                            error = "Streaming responses are not supported yet",
-                                            type = "unsupported_feature",
-                                        ),
-                                    )
-                                    HttpTrafficLogger.logResponse(
-                                        "/v1/chat/completions",
-                                        HttpStatusCode.BadRequest.value,
-                                        "$LOG_MARKER event=chat_stream_unsupported model=${request.model}",
-                                    )
-                                } else {
-                                    val response = inferenceHandler.handleChatCompletion(request)
-                                    call.respond(response)
-                                    HttpTrafficLogger.logResponse(
-                                        "/v1/chat/completions",
-                                        HttpStatusCode.OK.value,
-                                        "$LOG_MARKER event=chat_ok request_id=${response.id} model=${response.model}",
-                                    )
-                                }
-                            } finally {
-                                currentConnections.decrementAndGet()
-                            }
-                        }
-
-                        get("/engines") {
-                            if (!call.authorize()) return@get
-                            currentConnections.incrementAndGet()
-                            try {
-                                HttpTrafficLogger.logRequest("GET", "/v1/engines", call.safeHeaders())
-                                val models = inferenceHandler.getDownloadedLlmModels()
-                                call.respond(
-                                    mapOf(
-                                        "object" to "list",
-                                        "data" to models.map { it.toApiEngine() }
-                                    )
-                                )
-                                HttpTrafficLogger.logResponse(
-                                    "/v1/engines",
-                                    HttpStatusCode.OK.value,
-                                    "$LOG_MARKER event=engines_ok count=${models.size}",
-                                )
-                            } finally {
-                                currentConnections.decrementAndGet()
-                            }
-                        }
-                    }
-                }
+            val socket = ServerSocket()
+            socket.reuseAddress = true
+            val address = try {
+                InetAddress.getByName(config.host)
+            } catch (e: Exception) {
+                Log.e(TAG, "$LOG_MARKER event=dns_resolution_failed host=${config.host} error=${e.message}", e)
+                HttpTrafficLogger.logError("api-server", "$LOG_MARKER event=dns_resolution_failed host=${config.host} error=${e.message}")
+                throw e
             }
+            socket.bind(InetSocketAddress(address, config.port))
+            serverSocket = socket
+            running = true
+            startTime.set(System.currentTimeMillis())
 
-            server = embedded.engine
-            server?.start(wait = false)
+            HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER event=server_starting host=${config.host} port=${config.port}")
+            acceptThread = Thread({ acceptLoop(socket) }, "local-api-server").also { thread ->
+                thread.isDaemon = true
+                thread.start()
+            }
             Log.i(TAG, "$LOG_MARKER event=server_started host=${config.host} port=${config.port}")
             HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER event=server_started host=${config.host} port=${config.port}")
         } catch (e: Exception) {
-            Log.e(TAG, "$LOG_MARKER event=server_start_failed error=${e.message}", e)
-            HttpTrafficLogger.logError("api-server", "$LOG_MARKER event=server_start_failed error=${e.message}")
-            server = null
+            running = false
+            serverSocket = null
+            val errorDetails = buildString {
+                append("Error: ${e.message}\n")
+                append("Type: ${e.javaClass.simpleName}\n")
+                append("Host: ${config.host}\n")
+                append("Port: ${config.port}\n")
+                if (e.cause != null) {
+                    append("Cause: ${e.cause?.message}\n")
+                }
+            }
+            Log.e(TAG, "$LOG_MARKER event=server_start_failed details=$errorDetails", e)
+            HttpTrafficLogger.logError("api-server", "$LOG_MARKER event=server_start_failed details=$errorDetails")
             throw e
         }
     }
 
-    /**
-     * Stop the API server
-     */
     fun stop() {
-        server?.stop(1000, 5000)
-        server = null
+        running = false
+        runCatching { serverSocket?.close() }
+        serverSocket = null
+        executor.shutdownNow()
         Log.i(TAG, "$LOG_MARKER event=server_stopped")
         HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER event=server_stopped")
     }
 
-    private suspend fun ApplicationCall.authorize(): Boolean {
-        if (config.authType == AuthType.NONE) return true
-        val authorization = request.header(HttpHeaders.Authorization)
-        val expected = "Bearer ${config.apiKey}"
-        val authorized = config.apiKey.isNotBlank() && authorization == expected
-        if (!authorized) {
-            Log.w(TAG, "$LOG_MARKER event=auth_failed path=${request.path()} auth_type=${config.authType}")
-            HttpTrafficLogger.logError(
-                request.path(),
-                "$LOG_MARKER event=auth_failed auth_type=${config.authType}",
-            )
-            respond(
-                HttpStatusCode.Unauthorized,
-                ErrorResponse(
-                    error = "Unauthorized",
-                    type = "authentication_error",
-                ),
-            )
-        }
-        return authorized
-    }
+    fun isRunning(): Boolean = running
 
-    private fun ApplicationCall.safeHeaders(): String {
-        return request.headers.entries().joinToString("\n") { entry ->
-            val value = if (entry.key.equals(HttpHeaders.Authorization, ignoreCase = true)) {
-                "<redacted>"
-            } else {
-                entry.value.joinToString(",")
-            }
-            "${entry.key}: $value"
-        }
-    }
-
-    /**
-     * Check if server is running
-     */
-    fun isRunning(): Boolean = server != null
-
-    /**
-     * Get server uptime in milliseconds
-     */
     fun getUptime(): Long = if (startTime.get() > 0) {
         System.currentTimeMillis() - startTime.get()
     } else {
         0
     }
 
-    /**
-     * Get current connection count
-     */
     fun getCurrentConnections(): Long = currentConnections.get()
 
-    /**
-     * Increment connection count
-     */
     fun incrementConnections() {
         currentConnections.incrementAndGet()
     }
 
-    /**
-     * Decrement connection count
-     */
     fun decrementConnections() {
         currentConnections.decrementAndGet()
     }
+
+    private fun acceptLoop(socket: ServerSocket) {
+        while (running) {
+            try {
+                val client = socket.accept()
+                executor.execute { handleClient(client) }
+            } catch (e: SocketException) {
+                if (running) {
+                    Log.e(TAG, "$LOG_MARKER event=accept_socket_error error=${e.message}", e)
+                    HttpTrafficLogger.logError("api-server", "$LOG_MARKER event=accept_socket_error error=${e.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "$LOG_MARKER event=accept_error error=${e.message}", e)
+                HttpTrafficLogger.logError("api-server", "$LOG_MARKER event=accept_error error=${e.message}")
+            }
+        }
+    }
+
+    private fun handleClient(socket: Socket) {
+        currentConnections.incrementAndGet()
+        try {
+            socket.use { client ->
+                try {
+                    val request = readRequest(client)
+                    if (request == null) {
+                        Log.w(TAG, "$LOG_MARKER event=empty_request remote=${client.remoteSocketAddress}")
+                        return
+                    }
+
+                    HttpTrafficLogger.logRequest(request.method, request.path, request.safeHeaders(), request.body)
+                    Log.d(TAG, "$LOG_MARKER event=request_start method=${request.method} path=${request.path}")
+
+                    if (request.method == "OPTIONS") {
+                        writeResponse(client, 204, "", "text/plain")
+                        return
+                    }
+
+                    if (!request.authorize()) {
+                        writeJson(client, 401, ErrorResponse(error = "Unauthorized", type = "authentication_error"))
+                        HttpTrafficLogger.logError(request.path, "$LOG_MARKER event=auth_failed auth_type=${config.authType}")
+                        return
+                    }
+
+                    route(request, client)
+                } catch (e: IllegalArgumentException) {
+                    Log.w(TAG, "$LOG_MARKER event=request_bad_request error=${e.message}", e)
+                    HttpTrafficLogger.logError("api-server", "$LOG_MARKER event=request_bad_request error=${e.message}")
+                    writeJson(client, 400, ErrorResponse(error = e.message ?: "Bad request", type = "bad_request"))
+                } catch (e: Exception) {
+                    Log.e(TAG, "$LOG_MARKER event=request_error error=${e.message}", e)
+                    HttpTrafficLogger.logError("api-server", "$LOG_MARKER event=request_error error=${e.message}")
+                    writeJson(client, 500, ErrorResponse(error = e.message ?: "Internal error", type = "internal_error"))
+                }
+            }
+        } finally {
+            currentConnections.decrementAndGet()
+        }
+    }
+
+    private fun route(request: HttpRequest, socket: Socket) {
+        when {
+            request.method == "GET" && request.path == "/health" -> {
+                val response = HealthResponse(
+                    status = "ok",
+                    uptime = System.currentTimeMillis() - startTime.get(),
+                    connections = currentConnections.get().toInt(),
+                    loaded_model = null,
+                )
+                writeJson(socket, 200, response)
+                HttpTrafficLogger.logResponse("/health", 200, "$LOG_MARKER event=health_ok")
+            }
+            request.method == "GET" && request.path == "/v1/models" -> {
+                val models = inferenceHandler.getDownloadedLlmModels()
+                writeJson(socket, 200, ModelsResponse(data = models.map { it.toApiModel() }))
+                HttpTrafficLogger.logResponse("/v1/models", 200, "$LOG_MARKER event=models_ok count=${models.size}")
+            }
+            request.method == "GET" && request.path == "/v1/engines" -> {
+                val models = inferenceHandler.getDownloadedLlmModels()
+                writeJson(socket, 200, EnginesResponse(data = models.map { it.toApiEngine() }))
+                HttpTrafficLogger.logResponse("/v1/engines", 200, "$LOG_MARKER event=engines_ok count=${models.size}")
+            }
+            request.method == "POST" && request.path == "/v1/chat/completions" -> {
+                val chatRequest = json.decodeFromString<ChatCompletionRequest>(request.body)
+                if (chatRequest.stream) {
+                    handleStreamChatCompletion(socket, chatRequest)
+                } else {
+                    val response = runBlocking { inferenceHandler.handleChatCompletion(chatRequest) }
+                    writeJson(socket, 200, response)
+                    HttpTrafficLogger.logResponse("/v1/chat/completions", 200, "$LOG_MARKER event=chat_ok request_id=${response.id} model=${response.model}")
+                }
+            }
+            else -> {
+                writeJson(socket, 404, ErrorResponse(error = "Not found", type = "not_found"))
+                HttpTrafficLogger.logResponse(request.path, 404, "$LOG_MARKER event=not_found path=${request.path}")
+            }
+        }
+    }
+
+    private fun readRequest(socket: Socket): HttpRequest? {
+        val input = socket.getInputStream()
+        val headerBytes = ByteArrayOutputStream()
+        var matched = 0
+        val delimiter = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())
+        while (matched < delimiter.size) {
+            val next = input.read()
+            if (next == -1) return null
+            headerBytes.write(next)
+            matched = if (next.toByte() == delimiter[matched]) matched + 1 else 0
+        }
+
+        val headerText = headerBytes.toString(Charsets.UTF_8.name())
+        val lines = headerText.split("\r\n")
+        val requestLine = lines.firstOrNull()?.takeIf { it.isNotBlank() } ?: return null
+        val parts = requestLine.split(" ")
+        if (parts.size < 2) throw IllegalArgumentException("Invalid request line")
+
+        val headers = linkedMapOf<String, String>()
+        for (line in lines.drop(1)) {
+            if (line.isBlank()) continue
+            val separator = line.indexOf(':')
+            if (separator > 0) {
+                headers[line.substring(0, separator).trim().lowercase(Locale.US)] =
+                    line.substring(separator + 1).trim()
+            }
+        }
+
+        val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
+        val body = if (contentLength > 0) {
+            val buffer = ByteArray(contentLength)
+            var offset = 0
+            while (offset < contentLength) {
+                val count = input.read(buffer, offset, contentLength - offset)
+                if (count < 0) break
+                offset += count
+            }
+            String(buffer, 0, offset, Charsets.UTF_8)
+        } else {
+            ""
+        }
+
+        return HttpRequest(
+            method = parts[0].uppercase(Locale.US),
+            path = parts[1].substringBefore('?'),
+            headers = headers,
+            body = body,
+        )
+    }
+
+    private fun HttpRequest.authorize(): Boolean {
+        if (config.authType == AuthType.NONE) return true
+        val expected = "Bearer ${config.apiKey}"
+        return config.apiKey.isNotBlank() && headers["authorization"] == expected
+    }
+
+    private inline fun <reified T> writeJson(socket: Socket, statusCode: Int, body: T) {
+        writeResponse(socket, statusCode, json.encodeToString(body), "application/json")
+    }
+
+    private fun writeResponse(socket: Socket, statusCode: Int, body: String, contentType: String) {
+        val bytes = body.toByteArray(Charsets.UTF_8)
+        val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8))
+        writer.write("HTTP/1.1 $statusCode ${reasonPhrase(statusCode)}\r\n")
+        writer.write("Content-Type: $contentType; charset=utf-8\r\n")
+        writer.write("Content-Length: ${bytes.size}\r\n")
+        writer.write("Connection: close\r\n")
+        writer.write("Access-Control-Allow-Origin: *\r\n")
+        writer.write("Access-Control-Allow-Headers: Authorization, Content-Type\r\n")
+        writer.write("Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n")
+        writer.write("\r\n")
+        writer.flush()
+        socket.getOutputStream().write(bytes)
+        socket.getOutputStream().flush()
+    }
+
+    private fun reasonPhrase(statusCode: Int): String {
+        return when (statusCode) {
+            200 -> "OK"
+            204 -> "No Content"
+            400 -> "Bad Request"
+            401 -> "Unauthorized"
+            404 -> "Not Found"
+            500 -> "Internal Server Error"
+            else -> "OK"
+        }
+    }
+
+    private fun HttpRequest.safeHeaders(): String {
+        return headers.entries.joinToString("\n") { entry ->
+            val value = if (entry.key.equals("authorization", ignoreCase = true)) {
+                "<redacted>"
+            } else {
+                entry.value
+            }
+            "${entry.key}: $value"
+        }
+    }
+
+    private data class HttpRequest(
+        val method: String,
+        val path: String,
+        val headers: Map<String, String>,
+        val body: String,
+    )
+
+    @Serializable
+    private data class EnginesResponse(
+        val `object`: String = "list",
+        val data: List<com.google.ai.edge.gallery.data.api.ApiEngine>,
+    )
+    
+    private fun handleStreamChatCompletion(socket: Socket, request: ChatCompletionRequest) {
+        try {
+            val output = socket.getOutputStream()
+            val writer = BufferedWriter(OutputStreamWriter(output, Charsets.UTF_8))
+            
+            writer.write("HTTP/1.1 200 OK\r\n")
+            writer.write("Content-Type: text/event-stream; charset=utf-8\r\n")
+            writer.write("Cache-Control: no-cache\r\n")
+            writer.write("Connection: keep-alive\r\n")
+            writer.write("Access-Control-Allow-Origin: *\r\n")
+            writer.write("Access-Control-Allow-Headers: Authorization, Content-Type\r\n")
+            writer.write("Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n")
+            writer.write("\r\n")
+            writer.flush()
+            
+            val requestId = "chatcmpl-${System.currentTimeMillis()}"
+            val startTime = System.currentTimeMillis()
+            
+            runBlocking {
+                try {
+                    inferenceHandler.handleStreamChatCompletion(request) { chunk, done ->
+                        try {
+                            val streamEvent = StreamChatChunk(
+                                id = requestId,
+                                `object` = "chat.completion.chunk",
+                                created = System.currentTimeMillis() / 1000,
+                                model = request.model,
+                                choices = listOf(
+                                    StreamChoice(
+                                        index = 0,
+                                        delta = StreamDelta(content = chunk, role = null),
+                                        finish_reason = if (done) "stop" else null
+                                    )
+                                )
+                            )
+                            val line = "data: ${json.encodeToString(streamEvent)}\n\n"
+                            writer.write(line)
+                            writer.flush()
+                            
+                            if (done) {
+                                writer.write("data: [DONE]\n\n")
+                                writer.flush()
+                            }
+                        } catch (e: SocketException) {
+                            if (e.message?.contains("Broken pipe", ignoreCase = true) == true || 
+                                e.message?.contains("Connection reset", ignoreCase = true) == true) {
+                                throw ClientDisconnectedException("Client disconnected: ${e.message}")
+                            }
+                            throw e
+                        } catch (e: IOException) {
+                            throw ClientDisconnectedException("Client disconnected: ${e.message}")
+                        }
+                    }
+                    
+                    HttpTrafficLogger.logResponse("/v1/chat/completions", 200, "$LOG_MARKER event=chat_stream_done request_id=$requestId model=${request.model} duration=${System.currentTimeMillis() - startTime}")
+                } catch (e: ClientDisconnectedException) {
+                    Log.i(TAG, "$LOG_MARKER event=chat_stream_client_disconnected request_id=$requestId model=${request.model} reason=${e.message}")
+                    HttpTrafficLogger.logDebug(
+                        TAG,
+                        "$LOG_MARKER event=chat_stream_client_disconnected request_id=$requestId model=${request.model} reason=${e.message}",
+                    )
+                }
+            }
+        } catch (e: ClientDisconnectedException) {
+            Log.i(TAG, "$LOG_MARKER event=chat_stream_client_disconnected model=${request.model} reason=${e.message}")
+            HttpTrafficLogger.logDebug(
+                TAG,
+                "$LOG_MARKER event=chat_stream_client_disconnected model=${request.model} reason=${e.message}",
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "$LOG_MARKER event=stream_error model=${request.model}", e)
+            HttpTrafficLogger.logError("/v1/chat/completions", "$LOG_MARKER event=stream_error model=${request.model} error=${e.message}")
+        }
+    }
+    
+    @Serializable
+    private data class StreamChatChunk(
+        val id: String,
+        val `object`: String,
+        val created: Long,
+        val model: String,
+        val choices: List<StreamChoice>
+    )
+    
+    @Serializable
+    private data class StreamChoice(
+        val index: Int,
+        val delta: StreamDelta,
+        val finish_reason: String? = null
+    )
+    
+    @Serializable
+    private data class StreamDelta(
+        val content: String,
+        val role: String?
+    )
 }

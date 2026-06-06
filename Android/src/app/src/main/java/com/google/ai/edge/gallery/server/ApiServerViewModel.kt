@@ -26,6 +26,9 @@ import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 private const val TAG = "ApiServerViewModel"
@@ -37,6 +40,7 @@ class ApiServerViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val configManager = ApiServerConfigManager(application)
     private var apiServer: ApiServer? = null
+    private var infoRefreshJob: Job? = null
 
     private val _serverStatus = MutableStateFlow<ServerStatus>(ServerStatus.Stopped)
     val serverStatus: StateFlow<ServerStatus> = _serverStatus.asStateFlow()
@@ -88,6 +92,7 @@ class ApiServerViewModel(application: Application) : AndroidViewModel(applicatio
                     connections = 0L
                 )
                 _serverInfo.value = info
+                startInfoRefreshLoop()
                 
                 Log.i(TAG, "LOCAL_API event=viewmodel_server_started host=${config.host} port=${config.port}")
             } catch (e: Exception) {
@@ -106,6 +111,8 @@ class ApiServerViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 apiServer?.stop()
                 apiServer = null
+                infoRefreshJob?.cancel()
+                infoRefreshJob = null
                 _serverStatus.value = ServerStatus.Stopped
                 _serverInfo.value = null
                 Log.i(TAG, "LOCAL_API event=viewmodel_server_stopped")
@@ -131,8 +138,23 @@ class ApiServerViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun refreshServerInfo() {
         viewModelScope.launch {
+            refreshServerInfoNow()
+        }
+    }
+
+    private fun startInfoRefreshLoop() {
+        infoRefreshJob?.cancel()
+        infoRefreshJob = viewModelScope.launch {
+            while (isActive && apiServer != null) {
+                refreshServerInfoNow()
+                delay(1000L)
+            }
+        }
+    }
+
+    private fun refreshServerInfoNow() {
             val config = configManager.configFlow.value
-            val server = apiServer ?: return@launch
+            val server = apiServer ?: return
             val info = ServerInfo(
                 host = config.host,
                 port = config.port,
@@ -140,12 +162,11 @@ class ApiServerViewModel(application: Application) : AndroidViewModel(applicatio
                 connections = server.getCurrentConnections()
             )
             _serverInfo.value = info
-        }
     }
 
     override fun onCleared() {
         super.onCleared()
-        stopServer()
+        infoRefreshJob?.cancel()
     }
 }
 

@@ -120,6 +120,59 @@ class ApiInferenceHandler(
       throw e
     }
   }
+  
+  suspend fun handleStreamChatCompletion(request: ChatCompletionRequest, onChunk: (String, Boolean) -> Unit) {
+    val requestId = "chatcmpl-${UUID.randomUUID()}"
+    val startedAt = System.currentTimeMillis()
+    Log.i(
+      TAG,
+      "$LOG_MARKER request_id=$requestId event=chat_stream_start model=${request.model} messages=${request.messages.size}",
+    )
+    HttpTrafficLogger.logDebug(
+      TAG,
+      "$LOG_MARKER request_id=$requestId event=chat_stream_start model=${request.model} messages=${request.messages.size}",
+    )
+
+    try {
+      withTimeout(requestTimeoutMs) {
+        inferenceSemaphore.withPermit {
+          val model = requireDownloadedModel(request.model, requestId)
+          val task = requireTaskForModel(model, requestId)
+          ensureInitialized(task, model, requestId)
+          runModelInferenceStream(model, request, requestId, onChunk)
+          
+          Log.i(
+            TAG,
+            "$LOG_MARKER request_id=$requestId event=chat_stream_done model=${model.name} duration_ms=${System.currentTimeMillis() - startedAt}",
+          )
+          HttpTrafficLogger.logDebug(
+            TAG,
+            "$LOG_MARKER request_id=$requestId event=chat_stream_done model=${model.name} duration_ms=${System.currentTimeMillis() - startedAt}",
+          )
+        }
+      }
+    } catch (e: ClientDisconnectedException) {
+      Log.i(TAG, "$LOG_MARKER request_id=$requestId event=chat_stream_client_disconnected model=${request.model} reason=${e.message}")
+      HttpTrafficLogger.logDebug(
+        TAG,
+        "$LOG_MARKER request_id=$requestId event=chat_stream_client_disconnected model=${request.model} reason=${e.message}",
+      )
+    } catch (e: TimeoutCancellationException) {
+      Log.e(TAG, "$LOG_MARKER request_id=$requestId event=chat_stream_timeout model=${request.model}", e)
+      HttpTrafficLogger.logError(
+        "/v1/chat/completions",
+        "$LOG_MARKER request_id=$requestId event=chat_stream_timeout model=${request.model}",
+      )
+      throw IllegalStateException("Request timed out after ${requestTimeoutMs}ms", e)
+    } catch (e: Exception) {
+      Log.e(TAG, "$LOG_MARKER request_id=$requestId event=chat_stream_error model=${request.model}", e)
+      HttpTrafficLogger.logError(
+        "/v1/chat/completions",
+        "$LOG_MARKER request_id=$requestId event=chat_stream_error model=${request.model} error=${e.message}",
+      )
+      throw e
+    }
+  }
 
   private fun requireDownloadedModel(modelId: String, requestId: String): Model {
     val model = modelManagerViewModel.getModelByName(modelId)
@@ -248,6 +301,48 @@ class ApiInferenceHandler(
     )
 
     return deferred.await()
+  }
+  
+  private suspend fun runModelInferenceStream(
+    model: Model,
+    request: ChatCompletionRequest,
+    requestId: String,
+    onChunk: (String, Boolean) -> Unit,
+  ) {
+    val deferred = CompletableDeferred<Unit>()
+    val prompt = buildPrompt(request)
+    Log.d(TAG, "$LOG_MARKER request_id=$requestId event=inference_stream_start model=${model.name}")
+    HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER request_id=$requestId event=inference_stream_start model=${model.name}")
+
+    model.runtimeHelper.resetConversation(model = model)
+    model.runtimeHelper.runInference(
+      model = model,
+      input = prompt,
+      resultListener = { partialResult, done, _ ->
+        if (partialResult.isNotEmpty()) {
+          onChunk(partialResult, done)
+        }
+        if (done && !deferred.isCompleted) {
+          deferred.complete(Unit)
+        }
+      },
+      cleanUpListener = {
+        if (!deferred.isCompleted) {
+          deferred.complete(Unit)
+        }
+      },
+      onError = { error ->
+        HttpTrafficLogger.logError(
+          "/v1/chat/completions",
+          "$LOG_MARKER request_id=$requestId event=inference_stream_error model=${model.name} error=$error",
+        )
+        if (!deferred.isCompleted) {
+          deferred.completeExceptionally(IllegalStateException(error))
+        }
+      },
+    )
+
+    deferred.await()
   }
 
   private fun buildPrompt(request: ChatCompletionRequest): String {

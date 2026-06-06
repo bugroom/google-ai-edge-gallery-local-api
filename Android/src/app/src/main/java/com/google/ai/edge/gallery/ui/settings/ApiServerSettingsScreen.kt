@@ -63,6 +63,9 @@ import com.google.ai.edge.gallery.data.displayName
 import com.google.ai.edge.gallery.server.ApiServerViewModel
 import com.google.ai.edge.gallery.server.ServerStatus
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
+import java.net.Inet4Address
+import java.net.NetworkInterface
+import java.util.Collections
 
 /**
  * API Server Settings Screen
@@ -75,6 +78,7 @@ fun ApiServerSettingsScreen(
     val serverStatus by viewModel.serverStatus.collectAsState()
     val serverInfo by viewModel.serverInfo.collectAsState()
     val config by viewModel.configFlow.collectAsState()
+    val lanIp = remember { getLanIpAddress() }
 
     var customPort by remember(config.port) { mutableStateOf(config.port.toString()) }
     var customApiKey by remember(config.apiKey) { mutableStateOf(config.apiKey) }
@@ -129,6 +133,7 @@ fun ApiServerSettingsScreen(
                     StatusCard(
                         status = "运行中",
                         host = config.host,
+                        lanIp = lanIp,
                         port = config.port,
                         uptime = serverInfo?.uptime ?: 0,
                         connections = serverInfo?.connections ?: 0,
@@ -139,6 +144,7 @@ fun ApiServerSettingsScreen(
                     StatusCard(
                         status = "已停止",
                         host = config.host,
+                        lanIp = lanIp,
                         port = config.port,
                         uptime = 0,
                         connections = 0,
@@ -149,6 +155,7 @@ fun ApiServerSettingsScreen(
                     StatusCard(
                         status = "错误",
                         host = config.host,
+                        lanIp = lanIp,
                         port = config.port,
                         uptime = 0,
                         connections = 0,
@@ -286,6 +293,7 @@ OutlinedTextField(
 private fun StatusCard(
     status: String,
     host: String,
+    lanIp: String?,
     port: Int,
     uptime: Long,
     connections: Long,
@@ -327,8 +335,13 @@ private fun StatusCard(
             }
             
             Text("端口: $port")
-            Text("地址: http://$host:$port")
-            Text("认证: ${if (host == "127.0.0.1") "本地" else "局域网"}")
+            if (host == "0.0.0.0") {
+                Text("本机地址: http://127.0.0.1:$port")
+                Text("局域网地址: http://${lanIp ?: "设备IP"}:$port")
+            } else {
+                Text("地址: http://127.0.0.1:$port")
+            }
+            Text("访问范围: ${if (host == "0.0.0.0") "局域网" else "仅本机"}")
             
             if (isRunning) {
                 Text("运行时间: ${uptime / 1000}秒")
@@ -343,4 +356,16 @@ private fun StatusCard(
             }
         }
     }
+}
+
+private fun getLanIpAddress(): String? {
+    return runCatching {
+        Collections.list(NetworkInterface.getNetworkInterfaces())
+            .asSequence()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { Collections.list(it.inetAddresses).asSequence() }
+            .filterIsInstance<Inet4Address>()
+            .firstOrNull { !it.isLoopbackAddress }
+            ?.hostAddress
+    }.getOrNull()
 }

@@ -227,6 +227,7 @@ private fun LogEntryCard(
         HttpTrafficLogger.LogType.RESPONSE -> Color(0xFFBBDEFB)
         HttpTrafficLogger.LogType.ERROR -> Color(0xFFFFCDD2)
         HttpTrafficLogger.LogType.DEBUG -> Color(0xFFFFE082)
+        HttpTrafficLogger.LogType.CRASH -> Color(0xFFFF5252)
     }
     
     val borderColor = when (entry.type) {
@@ -234,6 +235,7 @@ private fun LogEntryCard(
         HttpTrafficLogger.LogType.RESPONSE -> Color(0xFF2196F3)
         HttpTrafficLogger.LogType.ERROR -> Color(0xFFF44336)
         HttpTrafficLogger.LogType.DEBUG -> Color(0xFFFFC107)
+        HttpTrafficLogger.LogType.CRASH -> Color(0xFFD32F2F)
     }
     
     // 使用深色文字提高可读性
@@ -272,6 +274,7 @@ private fun LogEntryCard(
                     HttpTrafficLogger.LogType.RESPONSE -> "RESPONSE"
                     HttpTrafficLogger.LogType.ERROR -> "ERROR"
                     HttpTrafficLogger.LogType.DEBUG -> "DEBUG"
+                    HttpTrafficLogger.LogType.CRASH -> "CRASH"
                 }
                 
                 Text(
@@ -345,6 +348,31 @@ private fun LogEntryCard(
                         ),
                         maxLines = 5
                     )
+                }
+                HttpTrafficLogger.LogType.CRASH -> {
+                    Text(
+                        text = "Location: ${entry.method}",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        maxLines = 2
+                    )
+                    if (entry.error?.isNotEmpty() == true) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Stack: ${entry.error.take(500)}",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                color = Color.White,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            maxLines = 10
+                        )
+                    }
                 }
             }
         }

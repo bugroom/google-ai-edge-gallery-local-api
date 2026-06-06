@@ -145,6 +145,31 @@ class AgentChatTask @Inject constructor() : CustomTask {
   ) {
     val initialSystemPrompt = systemInstruction?.toString() ?: task.defaultSystemPrompt
     coroutineScope.launch(Dispatchers.Default) {
+      // Check if ViewModels are initialized before using them
+      val viewModelsInitialized = try {
+        val skillManagerViewModel = agentTools.skillManagerViewModel
+        val mcpManagerViewModel = agentTools.mcpManagerViewModel
+        true
+      } catch (e: UninitializedPropertyAccessException) {
+        false
+      }
+      
+      if (!viewModelsInitialized) {
+        Log.w(TAG, "AgentTools ViewModels not initialized, skipping skills/MCP loading")
+        LlmChatModelHelper.initialize(
+          context = context,
+          model = model,
+          taskId = task.id,
+          supportImage = true,
+          supportAudio = true,
+          onDone = onDone,
+          systemInstruction = systemInstruction,
+          tools = emptyList(),
+          enableConversationConstrainedDecoding = true,
+        )
+        return@launch
+      }
+      
       val skillsJob = launch { agentTools.skillManagerViewModel.loadSkills() }
       val mcpJob = launch { agentTools.mcpManagerViewModel.loadMcpServers() }
       skillsJob.join()

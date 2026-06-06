@@ -16,7 +16,12 @@
 
 package com.google.ai.edge.gallery.data
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
+import androidx.core.content.edit
+import java.io.PrintWriter
+import java.io.StringWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -24,6 +29,9 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /**
  * HTTP traffic logger for monitoring network requests in real-time
@@ -31,6 +39,13 @@ import kotlinx.coroutines.flow.asStateFlow
 object HttpTrafficLogger {
     private const val TAG = "HttpTrafficLogger"
     private const val MAX_LOG_ENTRIES = 1000
+    private const val MAX_PERSISTED_LOGS = 100
+    private const val PREFS_NAME = "http_traffic_logs"
+    private const val KEY_LOGS = "logs"
+    private const val KEY_LOG_ENABLED = "logging_enabled"
+    
+    private lateinit var sharedPreferences: SharedPreferences
+    private val json = Json { ignoreUnknownKeys = true }
     
     data class LogEntry(
         val timestamp: Long,
@@ -48,7 +63,8 @@ object HttpTrafficLogger {
         REQUEST,
         RESPONSE,
         ERROR,
-        DEBUG
+        DEBUG,
+        CRASH
     }
     
     private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
@@ -59,6 +75,53 @@ object HttpTrafficLogger {
     
     private val _isLoggingEnabled = MutableStateFlow(true)
     val isLoggingEnabled: StateFlow<Boolean> = _isLoggingEnabled.asStateFlow()
+    
+    fun initialize(context: Context) {
+        sharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        loadPersistedLogs()
+        _isLoggingEnabled.value = sharedPreferences.getBoolean(KEY_LOG_ENABLED, true)
+        setupCrashHandler()
+    }
+    
+    private fun loadPersistedLogs() {
+        try {
+            val logsJson = sharedPreferences.getString(KEY_LOGS, null) ?: return
+            val persistedLogs = json.decodeFromString<List<PersistedLogEntry>>(logsJson)
+            logQueue.addAll(persistedLogs.map { it.toLogEntry() })
+            _logs.value = logQueue.toList()
+            Log.d(TAG, "Loaded ${persistedLogs.size} persisted logs")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load persisted logs", e)
+        }
+    }
+    
+    private fun persistLogs() {
+        try {
+            val recentLogs = logQueue.toList().takeLast(MAX_PERSISTED_LOGS)
+            val persistedLogs = recentLogs.map { it.toPersistedLogEntry() }
+            val logsJson = json.encodeToString(persistedLogs)
+            sharedPreferences.edit {
+                putString(KEY_LOGS, logsJson)
+                putBoolean(KEY_LOG_ENABLED, _isLoggingEnabled.value)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to persist logs", e)
+        }
+    }
+    
+    private fun setupCrashHandler() {
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            val sw = StringWriter()
+            throwable.printStackTrace(PrintWriter(sw))
+            val stackTrace = sw.toString()
+            
+            logCrash("Thread: ${thread.name}", stackTrace)
+            persistLogs()
+            
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+    }
     
     fun logRequest(method: String, url: String, headers: String, body: String = "") {
         if (!_isLoggingEnabled.value) return
@@ -108,6 +171,20 @@ object HttpTrafficLogger {
         Log.e(TAG, "[ERROR] $url: $error")
     }
     
+    fun logCrash(location: String, stackTrace: String) {
+        val entry = LogEntry(
+            timestamp = System.currentTimeMillis(),
+            type = LogType.CRASH,
+            method = location,
+            url = "CRASH",
+            headers = "",
+            body = "",
+            error = stackTrace
+        )
+        addEntry(entry)
+        Log.e(TAG, "[CRASH] $location")
+    }
+    
     fun logDebug(tag: String, message: String) {
         if (!_isLoggingEnabled.value) return
         
@@ -132,11 +209,15 @@ object HttpTrafficLogger {
         }
         
         _logs.value = logQueue.toList()
+        persistLogs()
     }
     
     fun clearLogs() {
         logQueue.clear()
         _logs.value = emptyList()
+        sharedPreferences.edit {
+            remove(KEY_LOGS)
+        }
     }
     
     fun setLoggingEnabled(enabled: Boolean) {
@@ -173,6 +254,52 @@ Error: ${entry.error}
 ${entry.body}
 ---"""
             }
+            LogType.CRASH -> {
+                """[${formatTimestamp(entry.timestamp)}] CRASH [${entry.method}]
+${entry.error}
+---"""
+            }
         }
+    }
+    
+    @Serializable
+    private data class PersistedLogEntry(
+        val timestamp: Long,
+        val type: String,
+        val method: String,
+        val url: String,
+        val headers: String,
+        val body: String,
+        val responseCode: Int? = null,
+        val responseBody: String? = null,
+        val error: String? = null
+    )
+    
+    private fun LogEntry.toPersistedLogEntry(): PersistedLogEntry {
+        return PersistedLogEntry(
+            timestamp = timestamp,
+            type = type.name,
+            method = method,
+            url = url,
+            headers = headers.take(5000), // Limit header size for persistence
+            body = body.take(10000),     // Limit body size for persistence
+            responseCode = responseCode,
+            responseBody = responseBody?.take(10000),
+            error = error?.take(10000)
+        )
+    }
+    
+    private fun PersistedLogEntry.toLogEntry(): LogEntry {
+        return LogEntry(
+            timestamp = timestamp,
+            type = LogType.valueOf(type),
+            method = method,
+            url = url,
+            headers = headers,
+            body = body,
+            responseCode = responseCode,
+            responseBody = responseBody,
+            error = error
+        )
     }
 }

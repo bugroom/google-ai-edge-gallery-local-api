@@ -18,6 +18,7 @@ package com.google.ai.edge.gallery
 
 import android.app.Application
 import com.google.ai.edge.gallery.data.DataStoreRepository
+import com.google.ai.edge.gallery.data.HttpTrafficLogger
 import com.google.ai.edge.gallery.notifications.NotificationScheduleManager
 import com.google.ai.edge.gallery.ui.theme.ThemeSettings
 import com.google.firebase.FirebaseApp
@@ -32,6 +33,10 @@ class GalleryApplication : Application() {
 
   override fun onCreate() {
     super.onCreate()
+    
+    // Initialize HTTP traffic logger with crash handler
+    HttpTrafficLogger.initialize(this)
+    
     // Initialize the notification schedule manager to load the scheduled notifications from the
     // disk.
     notificationScheduleManager.initialize()
