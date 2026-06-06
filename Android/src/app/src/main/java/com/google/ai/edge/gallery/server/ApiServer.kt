@@ -73,6 +73,13 @@ class ApiServer(
             Log.w(TAG, "$LOG_MARKER event=server_already_running")
             return
         }
+        
+        // Ensure any previous server socket is closed before starting
+        if (serverSocket != null) {
+            Log.w(TAG, "$LOG_MARKER event=server_socket_exists_before_start")
+            stop()
+            Thread.sleep(100)
+        }
 
         try {
             val socket = ServerSocket()
