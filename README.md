@@ -25,6 +25,7 @@
 
 - `minSdk` 从 31 调整为 28，支持 Android 9.0 及以上设备。
 - 新增 `ApiCompatibilityHelper`，用于处理部分 Android API 版本兼容逻辑。
+- 主题切换已兼容 Android 12 以下设备，避免低版本系统调用 `UiModeManager.setApplicationNightMode()` 崩溃。
 - Release 构建限制 `arm64-v8a`，降低 APK 体积。
 
 ### 中文化

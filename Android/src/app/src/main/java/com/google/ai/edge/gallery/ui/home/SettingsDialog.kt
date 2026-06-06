@@ -20,6 +20,7 @@ import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
 import android.app.UiModeManager
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -169,15 +170,17 @@ fun SettingsDialog(
                     //
                     // This is necessary to make other Activities launched from MainActivity to have
                     // the correct theme.
-                    val uiModeManager =
-                      context.applicationContext.getSystemService(Context.UI_MODE_SERVICE)
-                        as UiModeManager
-                    if (theme == Theme.THEME_AUTO) {
-                      uiModeManager.setApplicationNightMode(UiModeManager.MODE_NIGHT_AUTO)
-                    } else if (theme == Theme.THEME_LIGHT) {
-                      uiModeManager.setApplicationNightMode(UiModeManager.MODE_NIGHT_NO)
-                    } else {
-                      uiModeManager.setApplicationNightMode(UiModeManager.MODE_NIGHT_YES)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                      val uiModeManager =
+                        context.applicationContext.getSystemService(Context.UI_MODE_SERVICE)
+                          as UiModeManager
+                      if (theme == Theme.THEME_AUTO) {
+                        uiModeManager.setApplicationNightMode(UiModeManager.MODE_NIGHT_AUTO)
+                      } else if (theme == Theme.THEME_LIGHT) {
+                        uiModeManager.setApplicationNightMode(UiModeManager.MODE_NIGHT_NO)
+                      } else {
+                        uiModeManager.setApplicationNightMode(UiModeManager.MODE_NIGHT_YES)
+                      }
                     }
                   },
                   checked = theme == selectedTheme,
