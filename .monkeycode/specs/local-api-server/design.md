@@ -45,12 +45,18 @@
 
 | 层级 | 技术 | 说明 |
 |------|------|------|
-| HTTP服务器 | Ktor Server | 轻量级、异步、支持协程 |
+| HTTP服务器 | Java ServerSocket | 轻量级、减少移动端 Ktor CIO 兼容性问题 |
 | JSON处理 | kotlinx.serialization | 类型安全的序列化 |
-| 并发处理 | Kotlin Coroutines | 异步编程 |
+| 并发处理 | Kotlin Coroutines + Semaphore | 异步编程与并发限制 |
 | 推理引擎 | LiteRT-LM | 已集成，复用现有代码 |
-| 日志记录 | Timber/Kotlin Logging | 现有日志系统 |
-| 持久化 | DataStore/SharedPreferences | 配置存储 |
+| 日志记录 | Android Log + HttpTrafficLogger | `LOCAL_API` 标记、实时日志、崩溃日志和持久化日志 |
+| 持久化 | SharedPreferences | 配置存储和日志保留 |
+
+---
+
+### 1.3 当前实现说明
+
+当前版本使用 native `ServerSocket` 实现 HTTP 服务，保留 OpenAI 兼容路由、CORS、Bearer API Key 鉴权和 SSE 流式响应。早期设计中的 Ktor/Netty 示例仅作为接口结构参考，最终代码以 `server/ApiServer.kt` 和 `server/ApiInferenceHandler.kt` 为准。
 
 ---
 
@@ -69,7 +75,14 @@ data class ApiServerConfig(
     val apiKey: String = "",
     val maxConcurrent: Int = 2,
     val queueSize: Int = 10,
-    val requestTimeout: Long = 30000L  // 30秒
+    val requestTimeout: Long = 30000L,  // 30秒
+    val defaultModelId: String = "",
+    val defaultTemperature: Double = 0.7,
+    val defaultMaxTokens: Int = 1024,
+    val defaultTopP: Double = 0.95,
+    val defaultTopK: Int = 40,
+    val defaultAccelerator: String = "GPU",
+    val defaultVisionAccelerator: String = "GPU"
 )
 
 enum class AuthType {

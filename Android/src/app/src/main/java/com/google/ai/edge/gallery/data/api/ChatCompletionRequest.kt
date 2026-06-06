@@ -23,12 +23,14 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class ChatCompletionRequest(
-    val model: String,
+    val model: String = "",
     val messages: List<ChatMessage>,
-    val temperature: Double = 0.7,
-    val max_tokens: Int = 1024,
-    val top_p: Double = 0.95,
-    val top_k: Int = 40,
+    val temperature: Double? = null,
+    val max_tokens: Int? = null,
+    val top_p: Double? = null,
+    val top_k: Int? = null,
+    val accelerator: String? = null,
+    val vision_accelerator: String? = null,
     val stream: Boolean = false,
     val stop: List<String>? = null
 )

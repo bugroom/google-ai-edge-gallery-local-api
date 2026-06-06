@@ -57,8 +57,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.ai.edge.gallery.data.Accelerator
 import com.google.ai.edge.gallery.data.ApiServerConfig
 import com.google.ai.edge.gallery.data.AuthType
+import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.displayName
 import com.google.ai.edge.gallery.server.ApiServerViewModel
 import com.google.ai.edge.gallery.server.ServerStatus
@@ -78,14 +80,28 @@ fun ApiServerSettingsScreen(
     val serverStatus by viewModel.serverStatus.collectAsState()
     val serverInfo by viewModel.serverInfo.collectAsState()
     val config by viewModel.configFlow.collectAsState()
+    val downloadedModels = modelManagerViewModel.getAllDownloadedModels()
+    val selectedDefaultModel = downloadedModels.firstOrNull { model: Model -> model.name == config.defaultModelId }
+    val acceleratorOptions = selectedDefaultModel?.accelerators?.ifEmpty { Accelerator.values().toList() } ?: Accelerator.values().toList()
+    val normalizedDefaultAccelerator = if (acceleratorOptions.any { it.label == config.defaultAccelerator }) {
+        config.defaultAccelerator
+    } else {
+        acceleratorOptions.firstOrNull()?.label ?: Accelerator.GPU.label
+    }
+    val visionAcceleratorOptions = Accelerator.values().toList()
     val lanIp = remember { getLanIpAddress() }
 
     var customPort by remember(config.port) { mutableStateOf(config.port.toString()) }
     var customApiKey by remember(config.apiKey) { mutableStateOf(config.apiKey) }
+    var customTemperature by remember(config.defaultTemperature) { mutableStateOf(config.defaultTemperature.toString()) }
+    var customMaxTokens by remember(config.defaultMaxTokens) { mutableStateOf(config.defaultMaxTokens.toString()) }
+    var customTopP by remember(config.defaultTopP) { mutableStateOf(config.defaultTopP.toString()) }
+    var customTopK by remember(config.defaultTopK) { mutableStateOf(config.defaultTopK.toString()) }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -164,6 +180,207 @@ fun ApiServerSettingsScreen(
                     )
                 }
             }
+        }
+
+        // Downloaded Model Selection
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "默认模型",
+                style = MaterialTheme.typography.titleMedium
+            )
+            if (downloadedModels.isEmpty()) {
+                Text(
+                    text = "暂无已下载的 LLM 模型，请先在 Models 中下载模型。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                downloadedModels.forEach { model: Model ->
+                    val selected = config.defaultModelId == model.name
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (selected) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            }
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = model.displayName.ifEmpty { model.name },
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Text(
+                                    text = model.name,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            TextButton(
+                                enabled = !config.enabled && !selected,
+                                onClick = {
+                                    viewModel.updateConfig { currentConfig: ApiServerConfig ->
+                                        val modelDefaultAccelerator = model.accelerators.firstOrNull()?.label ?: Accelerator.GPU.label
+                                        currentConfig.copy(
+                                            defaultModelId = model.name,
+                                            defaultAccelerator = if (model.accelerators.any { it.label == currentConfig.defaultAccelerator }) {
+                                                currentConfig.defaultAccelerator
+                                            } else {
+                                                modelDefaultAccelerator
+                                            },
+                                        )
+                                    }
+                                }
+                            ) {
+                                Text(if (selected) "已选择" else "选择")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Accelerator Selection
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "推理后端",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "加速器会影响模型初始化，修改后需重启 API 服务生效。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "文本推理",
+                style = MaterialTheme.typography.titleSmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                acceleratorOptions.forEach { accelerator: Accelerator ->
+                    val isSelected = normalizedDefaultAccelerator == accelerator.label
+                    Button(
+                        onClick = {
+                            viewModel.updateConfig { currentConfig: ApiServerConfig ->
+                                currentConfig.copy(defaultAccelerator = accelerator.label)
+                            }
+                        },
+                        enabled = !config.enabled,
+                        colors = if (isSelected) {
+                            androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            androidx.compose.material3.ButtonDefaults.outlinedButtonColors()
+                        }
+                    ) {
+                        Text(accelerator.label)
+                    }
+                }
+            }
+            Text(
+                text = "视觉输入",
+                style = MaterialTheme.typography.titleSmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                visionAcceleratorOptions.forEach { accelerator: Accelerator ->
+                    val isSelected = config.defaultVisionAccelerator == accelerator.label
+                    Button(
+                        onClick = {
+                            viewModel.updateConfig { currentConfig: ApiServerConfig ->
+                                currentConfig.copy(defaultVisionAccelerator = accelerator.label)
+                            }
+                        },
+                        enabled = !config.enabled,
+                        colors = if (isSelected) {
+                            androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            androidx.compose.material3.ButtonDefaults.outlinedButtonColors()
+                        }
+                    ) {
+                        Text(accelerator.label)
+                    }
+                }
+            }
+        }
+
+        // Default Model Parameters
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "默认模型参数",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "请求未传入对应参数时使用这些默认值。修改后需重启 API 服务生效。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedTextField(
+                value = customTemperature,
+                onValueChange = { newValue: String ->
+                    customTemperature = newValue
+                    newValue.toDoubleOrNull()?.let { value ->
+                        viewModel.updateConfig { currentConfig: ApiServerConfig ->
+                            currentConfig.copy(defaultTemperature = value.coerceIn(0.0, 2.0))
+                        }
+                    }
+                },
+                label = { Text("Temperature") },
+                enabled = !config.enabled,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = customMaxTokens,
+                onValueChange = { newValue: String ->
+                    customMaxTokens = newValue
+                    newValue.toIntOrNull()?.let { value ->
+                        viewModel.updateConfig { currentConfig: ApiServerConfig ->
+                            currentConfig.copy(defaultMaxTokens = value.coerceIn(1, 32768))
+                        }
+                    }
+                },
+                label = { Text("Max tokens") },
+                enabled = !config.enabled,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = customTopP,
+                onValueChange = { newValue: String ->
+                    customTopP = newValue
+                    newValue.toDoubleOrNull()?.let { value ->
+                        viewModel.updateConfig { currentConfig: ApiServerConfig ->
+                            currentConfig.copy(defaultTopP = value.coerceIn(0.0, 1.0))
+                        }
+                    }
+                },
+                label = { Text("Top P") },
+                enabled = !config.enabled,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = customTopK,
+                onValueChange = { newValue: String ->
+                    customTopK = newValue
+                    newValue.toIntOrNull()?.let { value ->
+                        viewModel.updateConfig { currentConfig: ApiServerConfig ->
+                            currentConfig.copy(defaultTopK = value.coerceIn(1, 200))
+                        }
+                    }
+                },
+                label = { Text("Top K") },
+                enabled = !config.enabled,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         // Port Configuration

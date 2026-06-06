@@ -27,7 +27,14 @@ data class ApiServerConfig(
     val apiKey: String = "",
     val maxConcurrent: Int = 2,
     val queueSize: Int = 10,
-    val requestTimeout: Long = 30000L  // 30 seconds
+    val requestTimeout: Long = 30000L,  // 30 seconds
+    val defaultModelId: String = "",
+    val defaultTemperature: Double = 0.7,
+    val defaultMaxTokens: Int = 1024,
+    val defaultTopP: Double = 0.95,
+    val defaultTopK: Int = 40,
+    val defaultAccelerator: String = Accelerator.GPU.label,
+    val defaultVisionAccelerator: String = Accelerator.GPU.label,
 )
 
 /**

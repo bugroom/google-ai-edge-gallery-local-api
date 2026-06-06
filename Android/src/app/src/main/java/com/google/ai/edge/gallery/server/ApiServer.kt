@@ -222,7 +222,7 @@ class ApiServer(
                 HttpTrafficLogger.logResponse("/v1/engines", 200, "$LOG_MARKER event=engines_ok count=${models.size}")
             }
             request.method == "POST" && request.path == "/v1/chat/completions" -> {
-                val chatRequest = json.decodeFromString<ChatCompletionRequest>(request.body)
+                val chatRequest = applyConfiguredDefaults(json.decodeFromString<ChatCompletionRequest>(request.body))
                 if (chatRequest.stream) {
                     handleStreamChatCompletion(socket, chatRequest)
                 } else {
@@ -285,6 +285,22 @@ class ApiServer(
             path = parts[1].substringBefore('?'),
             headers = headers,
             body = body,
+        )
+    }
+
+    private fun applyConfiguredDefaults(request: ChatCompletionRequest): ChatCompletionRequest {
+        val modelId = request.model.ifBlank { config.defaultModelId }
+        if (modelId.isBlank()) {
+            throw IllegalArgumentException("Model is required. Set request.model or choose a default API model in settings.")
+        }
+        return request.copy(
+            model = modelId,
+            temperature = request.temperature ?: config.defaultTemperature,
+            max_tokens = request.max_tokens ?: config.defaultMaxTokens,
+            top_p = request.top_p ?: config.defaultTopP,
+            top_k = request.top_k ?: config.defaultTopK,
+            accelerator = request.accelerator ?: config.defaultAccelerator,
+            vision_accelerator = request.vision_accelerator ?: config.defaultVisionAccelerator,
         )
     }
 

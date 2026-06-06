@@ -43,6 +43,13 @@ class ApiServerConfigManager(private val context: Context) {
         const val MAX_CONCURRENT = "max_concurrent"
         const val QUEUE_SIZE = "queue_size"
         const val REQUEST_TIMEOUT = "request_timeout"
+        const val DEFAULT_MODEL_ID = "default_model_id"
+        const val DEFAULT_TEMPERATURE = "default_temperature"
+        const val DEFAULT_MAX_TOKENS = "default_max_tokens"
+        const val DEFAULT_TOP_P = "default_top_p"
+        const val DEFAULT_TOP_K = "default_top_k"
+        const val DEFAULT_ACCELERATOR = "default_accelerator"
+        const val DEFAULT_VISION_ACCELERATOR = "default_vision_accelerator"
     }
 
     private fun loadConfig(): ApiServerConfig {
@@ -60,7 +67,14 @@ class ApiServerConfigManager(private val context: Context) {
             apiKey = sharedPreferences.getString(PreferenceKeys.API_KEY, "") ?: "",
             maxConcurrent = sharedPreferences.getInt(PreferenceKeys.MAX_CONCURRENT, 2),
             queueSize = sharedPreferences.getInt(PreferenceKeys.QUEUE_SIZE, 10),
-            requestTimeout = sharedPreferences.getLong(PreferenceKeys.REQUEST_TIMEOUT, 30000L)
+            requestTimeout = sharedPreferences.getLong(PreferenceKeys.REQUEST_TIMEOUT, 30000L),
+            defaultModelId = sharedPreferences.getString(PreferenceKeys.DEFAULT_MODEL_ID, "") ?: "",
+            defaultTemperature = sharedPreferences.getString(PreferenceKeys.DEFAULT_TEMPERATURE, "0.7")?.toDoubleOrNull() ?: 0.7,
+            defaultMaxTokens = sharedPreferences.getInt(PreferenceKeys.DEFAULT_MAX_TOKENS, 1024),
+            defaultTopP = sharedPreferences.getString(PreferenceKeys.DEFAULT_TOP_P, "0.95")?.toDoubleOrNull() ?: 0.95,
+            defaultTopK = sharedPreferences.getInt(PreferenceKeys.DEFAULT_TOP_K, 40),
+            defaultAccelerator = sharedPreferences.getString(PreferenceKeys.DEFAULT_ACCELERATOR, Accelerator.GPU.label) ?: Accelerator.GPU.label,
+            defaultVisionAccelerator = sharedPreferences.getString(PreferenceKeys.DEFAULT_VISION_ACCELERATOR, Accelerator.GPU.label) ?: Accelerator.GPU.label
         )
     }
 
@@ -77,6 +91,13 @@ class ApiServerConfigManager(private val context: Context) {
             putInt(PreferenceKeys.MAX_CONCURRENT, config.maxConcurrent)
             putInt(PreferenceKeys.QUEUE_SIZE, config.queueSize)
             putLong(PreferenceKeys.REQUEST_TIMEOUT, config.requestTimeout)
+            putString(PreferenceKeys.DEFAULT_MODEL_ID, config.defaultModelId)
+            putString(PreferenceKeys.DEFAULT_TEMPERATURE, config.defaultTemperature.toString())
+            putInt(PreferenceKeys.DEFAULT_MAX_TOKENS, config.defaultMaxTokens)
+            putString(PreferenceKeys.DEFAULT_TOP_P, config.defaultTopP.toString())
+            putInt(PreferenceKeys.DEFAULT_TOP_K, config.defaultTopK)
+            putString(PreferenceKeys.DEFAULT_ACCELERATOR, config.defaultAccelerator)
+            putString(PreferenceKeys.DEFAULT_VISION_ACCELERATOR, config.defaultVisionAccelerator)
         }
         _configFlow.value = config
     }

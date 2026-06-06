@@ -11,8 +11,9 @@
 - Release APK 已可构建通过。
 - Android 最低版本已下调到 Android 9.0。
 - 模型下载源保持官方 Hugging Face 源。
-- 已新增本地 API Server 设置入口。
-- 已接入 OpenAI 兼容接口骨架和 LiteRT-LM 推理链路。
+- 已新增本地 API Server 侧栏入口。
+- 已接入 OpenAI 兼容接口和 LiteRT-LM 推理链路。
+- 已支持默认模型、采样参数和 CPU/GPU/NPU/TPU 推理后端配置。
 - 已添加统一日志标记 `LOCAL_API`，方便后续排查问题。
 - 真机端到端调用仍建议结合实际已下载模型继续测试。
 
@@ -37,9 +38,9 @@
 
 ### 本地 API Server
 
-- 新增本地 API 服务配置：启用状态、监听地址、端口、认证方式、API Key、并发数、队列大小、请求超时。
-- 新增 API 设置入口：Settings -> 本地 API 服务。
-- 新增 Ktor CIO HTTP Server。
+- 新增本地 API 服务配置：启用状态、监听地址、端口、认证方式、API Key、并发数、队列大小、请求超时、默认模型、默认采样参数、文本推理后端和视觉输入后端。
+- 新增 API 设置入口：侧栏 -> API Server。
+- 新增 native `ServerSocket` HTTP Server。
 - 新增 API Key 鉴权：`Authorization: Bearer <apiKey>`。
 - 新增 CORS 支持。
 - 新增 OpenAI 兼容接口：
@@ -49,6 +50,8 @@
   - `POST /v1/chat/completions`
 - `/v1/models` 和 `/v1/engines` 返回已下载的 LLM 模型。
 - `/v1/chat/completions` 已接入现有 LiteRT-LM 推理流程。
+- `stream: true` 支持 SSE 流式响应。
+- 请求未传 `model`、`temperature`、`max_tokens`、`top_p`、`top_k`、`accelerator`、`vision_accelerator` 时，会使用 API Server 页面中的默认配置。
 
 ### 可观测性
 
@@ -75,17 +78,25 @@ adb logcat | grep LOCAL_API
 
 1. 安装并打开 App。
 2. 下载一个支持 LLM 的模型。
-3. 进入 `Settings`。
-4. 打开 `本地 API 服务`。
-5. 配置监听地址和端口。
-6. 如需外部设备访问，选择 `0.0.0.0`。
-7. 如启用 API Key，复制生成的 Key。
+3. 从侧栏进入 `API Server`。
+4. 选择默认模型。
+5. 配置默认采样参数和推理后端。
+6. 配置监听地址和端口。
+7. 如需外部设备访问，选择 `0.0.0.0`。
+8. 如启用 API Key，复制生成的 Key。
+9. 打开 API 服务开关。
 
 默认配置：
 
 - Host: `127.0.0.1`
 - Port: `8080`
 - Auth: `NONE`
+- Temperature: `0.7`
+- Max tokens: `1024`
+- Top P: `0.95`
+- Top K: `40`
+- Accelerator: `GPU`
+- Vision accelerator: `GPU`
 
 局域网访问时，手机和客户端设备需要位于同一网络。使用 `0.0.0.0` 监听后，客户端应访问手机的局域网 IP。
 
@@ -150,7 +161,11 @@ curl http://127.0.0.1:8080/v1/chat/completions \
       {"role": "user", "content": "你好，介绍一下你自己"}
     ],
     "temperature": 0.7,
-    "max_tokens": 1024
+    "max_tokens": 1024,
+    "top_p": 0.95,
+    "top_k": 40,
+    "accelerator": "GPU",
+    "vision_accelerator": "GPU"
   }'
 ```
 
@@ -195,6 +210,22 @@ curl http://127.0.0.1:8080/v1/chat/completions \
   }
 }
 ```
+
+### 5. 流式聊天补全
+
+```bash
+# Call streaming chat completions
+curl http://127.0.0.1:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "持续输出一个简短故事"}
+    ],
+    "stream": true
+  }'
+```
+
+当请求未传 `model` 时，服务会使用 API Server 页面选择的默认模型。
 
 ## 构建说明
 

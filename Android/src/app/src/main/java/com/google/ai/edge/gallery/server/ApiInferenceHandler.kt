@@ -19,6 +19,8 @@ package com.google.ai.edge.gallery.server
 import android.content.Context
 import android.util.Log
 import com.google.ai.edge.gallery.common.processLlmResponse
+import com.google.ai.edge.gallery.data.Accelerator
+import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.HttpTrafficLogger
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
@@ -72,7 +74,8 @@ class ApiInferenceHandler(
         inferenceSemaphore.withPermit {
           val model = requireDownloadedModel(request.model, requestId)
           val task = requireTaskForModel(model, requestId)
-          ensureInitialized(task, model, requestId)
+          val modelConfigChanged = applyRequestParameters(model, request, requestId)
+          ensureInitialized(task, model, requestId, force = modelConfigChanged)
           val output = runModelInference(model, request, requestId)
           val promptTokens = estimateTokens(request.messages.joinToString("\n") { it.content })
           val completionTokens = estimateTokens(output)
@@ -138,7 +141,8 @@ class ApiInferenceHandler(
         inferenceSemaphore.withPermit {
           val model = requireDownloadedModel(request.model, requestId)
           val task = requireTaskForModel(model, requestId)
-          ensureInitialized(task, model, requestId)
+          val modelConfigChanged = applyRequestParameters(model, request, requestId)
+          ensureInitialized(task, model, requestId, force = modelConfigChanged)
           runModelInferenceStream(model, request, requestId, onChunk)
           
           Log.i(
@@ -222,8 +226,53 @@ class ApiInferenceHandler(
     return task
   }
 
-  private suspend fun ensureInitialized(task: Task, model: Model, requestId: String) {
-    if (model.instance != null) {
+  private fun applyRequestParameters(model: Model, request: ChatCompletionRequest, requestId: String): Boolean {
+    val accelerator = request.accelerator ?: Accelerator.GPU.label
+    val visionAccelerator = request.vision_accelerator ?: Accelerator.GPU.label
+    val validAccelerators = Accelerator.values().map { it.label }.toSet()
+    if (accelerator !in validAccelerators) {
+      throw IllegalArgumentException("Unsupported accelerator '$accelerator'")
+    }
+    if (visionAccelerator !in validAccelerators) {
+      throw IllegalArgumentException("Unsupported vision accelerator '$visionAccelerator'")
+    }
+    if (model.accelerators.isNotEmpty() && model.accelerators.none { it.label == accelerator }) {
+      throw IllegalArgumentException("Accelerator '$accelerator' is not compatible with model '${model.name}'")
+    }
+    val updates = mapOf(
+      ConfigKeys.TEMPERATURE.label to (request.temperature ?: 0.7).toFloat(),
+      ConfigKeys.MAX_TOKENS.label to (request.max_tokens ?: 1024),
+      ConfigKeys.TOPP.label to (request.top_p ?: 0.95).toFloat(),
+      ConfigKeys.TOPK.label to (request.top_k ?: 40),
+      ConfigKeys.ACCELERATOR.label to accelerator,
+      ConfigKeys.VISION_ACCELERATOR.label to visionAccelerator,
+    )
+    var changed = false
+    val updatedValues = model.configValues.toMutableMap()
+    updates.forEach { (key, value) ->
+      if (updatedValues[key] != value) {
+        updatedValues[key] = value
+        changed = true
+      }
+    }
+    if (changed) {
+      model.prevConfigValues = model.configValues
+      model.configValues = updatedValues
+      modelManagerViewModel.updateConfigValuesUpdateTrigger()
+      Log.i(
+        TAG,
+        "$LOG_MARKER request_id=$requestId event=model_params_applied model=${model.name} temperature=${request.temperature} max_tokens=${request.max_tokens} top_p=${request.top_p} top_k=${request.top_k} accelerator=$accelerator vision_accelerator=$visionAccelerator",
+      )
+      HttpTrafficLogger.logDebug(
+        TAG,
+        "$LOG_MARKER request_id=$requestId event=model_params_applied model=${model.name}",
+      )
+    }
+    return changed
+  }
+
+  private suspend fun ensureInitialized(task: Task, model: Model, requestId: String, force: Boolean = false) {
+    if (!force && model.instance != null) {
       Log.d(TAG, "$LOG_MARKER request_id=$requestId event=model_already_initialized model=${model.name}")
       HttpTrafficLogger.logDebug(
         TAG,
@@ -241,6 +290,7 @@ class ApiInferenceHandler(
       context = context,
       task = task,
       model = model,
+      force = force,
       onDone = {
         Log.i(TAG, "$LOG_MARKER request_id=$requestId event=model_init_done model=${model.name}")
         HttpTrafficLogger.logDebug(
