@@ -342,6 +342,18 @@ fun getTextFieldDisplayValue(valueType: ValueType, value: Float): String {
   }
 }
 
+private fun Any?.toConfigFloat(): Float {
+  return when (this) {
+    is Float -> this
+    is Double -> this.toFloat()
+    is Int -> this.toFloat()
+    is Long -> this.toFloat()
+    is Number -> this.toFloat()
+    is String -> this.toFloatOrNull() ?: 0f
+    else -> 0f
+  }
+}
+
 /**
  * Composable function to display a number slider with an associated text input field.
  *
@@ -368,17 +380,12 @@ fun NumberSliderRow(config: NumberSliderConfig, values: SnapshotStateMap<String,
       // value or out of the slider range, temporary while user is still editing the text.
       var textFieldDisplayValue by remember {
         mutableStateOf(
-          getTextFieldDisplayValue(config.valueType, values[config.key.label] as Float)
+          getTextFieldDisplayValue(config.valueType, values[config.key.label].toConfigFloat())
         )
       }
 
       // Number slider.
-      val sliderValue =
-        try {
-          values[config.key.label] as Float
-        } catch (e: Exception) {
-          0f
-        }
+      val sliderValue = values[config.key.label].toConfigFloat()
 
       Slider(
         modifier = Modifier.height(24.dp).weight(1f).padding(end = 8.dp),
@@ -402,7 +409,7 @@ fun NumberSliderRow(config: NumberSliderConfig, values: SnapshotStateMap<String,
             // When leaving focus, display the internal value so that any invalid value is cleared.
             if (!isFocused) {
               textFieldDisplayValue =
-                getTextFieldDisplayValue(config.valueType, values[config.key.label] as Float)
+                getTextFieldDisplayValue(config.valueType, values[config.key.label].toConfigFloat())
             }
           },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -437,12 +444,7 @@ fun NumberSliderRow(config: NumberSliderConfig, values: SnapshotStateMap<String,
     }
 
     if (config.key == ConfigKeys.MAX_TOKENS) {
-      val sliderValue =
-        try {
-          values[config.key.label] as Float
-        } catch (e: Exception) {
-          0f
-        }
+      val sliderValue = values[config.key.label].toConfigFloat()
       if (sliderValue >= 10000f) {
         Text(
           text = stringResource(R.string.max_tokens_warning_message),

@@ -28,6 +28,8 @@
 - 主题切换已兼容 Android 12 以下设备，避免低版本系统调用 `UiModeManager.setApplicationNightMode()` 崩溃。
 - Release 构建限制 `arm64-v8a`，降低 APK 体积。
 
+- 配置弹窗的数值滑块已兼容 `Int`、`Float`、`Double` 等数值类型，避免默认参数写入后再次打开配置时类型转换崩溃。
+
 ### 中文化
 
 - 新增 `values-zh/strings.xml` 中文资源。
