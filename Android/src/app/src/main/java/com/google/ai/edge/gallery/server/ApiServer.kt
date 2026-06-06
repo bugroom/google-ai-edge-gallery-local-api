@@ -188,6 +188,12 @@ class ApiServer(
                     Log.w(TAG, "$LOG_MARKER event=request_bad_request error=${e.message}", e)
                     HttpTrafficLogger.logError("api-server", "$LOG_MARKER event=request_bad_request error=${e.message}")
                     writeJson(client, 400, ErrorResponse(error = e.message ?: "Bad request", type = "bad_request"))
+                } catch (e: SocketException) {
+                    Log.i(TAG, "$LOG_MARKER event=client_socket_closed remote=${client.remoteSocketAddress} reason=${e.message}")
+                    HttpTrafficLogger.logDebug(
+                        TAG,
+                        "$LOG_MARKER event=client_socket_closed remote=${client.remoteSocketAddress} reason=${e.message}",
+                    )
                 } catch (e: Exception) {
                     Log.e(TAG, "$LOG_MARKER event=request_error error=${e.message}", e)
                     HttpTrafficLogger.logError("api-server", "$LOG_MARKER event=request_error error=${e.message}")
@@ -410,11 +416,7 @@ class ApiServer(
                                 writer.flush()
                             }
                         } catch (e: SocketException) {
-                            if (e.message?.contains("Broken pipe", ignoreCase = true) == true || 
-                                e.message?.contains("Connection reset", ignoreCase = true) == true) {
-                                throw ClientDisconnectedException("Client disconnected: ${e.message}")
-                            }
-                            throw e
+                            throw ClientDisconnectedException("Client disconnected: ${e.message}")
                         } catch (e: IOException) {
                             throw ClientDisconnectedException("Client disconnected: ${e.message}")
                         }

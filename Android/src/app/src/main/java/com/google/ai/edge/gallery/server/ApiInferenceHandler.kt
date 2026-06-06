@@ -369,8 +369,16 @@ class ApiInferenceHandler(
       model = model,
       input = prompt,
       resultListener = { partialResult, done, _ ->
-        if (partialResult.isNotEmpty()) {
-          onChunk(partialResult, done)
+        if (!deferred.isCompleted && partialResult.isNotEmpty()) {
+          try {
+            onChunk(partialResult, done)
+          } catch (e: ClientDisconnectedException) {
+            HttpTrafficLogger.logDebug(
+              TAG,
+              "$LOG_MARKER request_id=$requestId event=inference_stream_client_disconnected model=${model.name} reason=${e.message}",
+            )
+            deferred.completeExceptionally(e)
+          }
         }
         if (done && !deferred.isCompleted) {
           deferred.complete(Unit)

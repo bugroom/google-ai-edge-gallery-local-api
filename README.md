@@ -56,6 +56,8 @@
 - `stream: true` 支持 SSE 流式响应。
 - 请求未传 `model`、`temperature`、`max_tokens`、`top_p`、`top_k`、`accelerator`、`vision_accelerator` 时，会使用 API Server 页面中的默认配置。
 
+- 本地 API 流式响应已兼容客户端主动断开、连接重置和 socket 关闭场景，避免正常断连被记录为崩溃。
+
 ### 可观测性
 
 本地 API 相关日志统一使用 `LOCAL_API` 标记，并尽量包含以下字段：
