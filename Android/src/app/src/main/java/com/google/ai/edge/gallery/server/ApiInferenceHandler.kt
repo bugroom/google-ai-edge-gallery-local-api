@@ -322,7 +322,26 @@ class ApiInferenceHandler(
     Log.d(TAG, "$LOG_MARKER request_id=$requestId event=inference_start model=${model.name}")
     HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER request_id=$requestId event=inference_start model=${model.name}")
 
+    // Check if model instance is initialized
+    if (model.instance == null) {
+      val error = "Model instance is not initialized"
+      Log.e(TAG, "$LOG_MARKER request_id=$requestId event=inference_error error=$error")
+      HttpTrafficLogger.logError(
+        "/v1/chat/completions",
+        "$LOG_MARKER request_id=$requestId event=inference_error model=${model.name} error=$error",
+      )
+      throw IllegalStateException(error)
+    }
+
     model.runtimeHelper.resetConversation(model = model)
+
+    // Double-check instance after reset
+    if (model.instance == null) {
+      val error = "Model instance became null after resetConversation"
+      Log.e(TAG, "$LOG_MARKER request_id=$requestId event=inference_error error=$error")
+      throw IllegalStateException(error)
+    }
+
     model.runtimeHelper.runInference(
       model = model,
       input = prompt,
@@ -364,7 +383,26 @@ class ApiInferenceHandler(
     Log.d(TAG, "$LOG_MARKER request_id=$requestId event=inference_stream_start model=${model.name}")
     HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER request_id=$requestId event=inference_stream_start model=${model.name}")
 
+    // Check if model instance is initialized
+    if (model.instance == null) {
+      val error = "Model instance is not initialized"
+      Log.e(TAG, "$LOG_MARKER request_id=$requestId event=inference_stream_error error=$error")
+      HttpTrafficLogger.logError(
+        "/v1/chat/completions",
+        "$LOG_MARKER request_id=$requestId event=inference_stream_error model=${model.name} error=$error",
+      )
+      throw IllegalStateException(error)
+    }
+
     model.runtimeHelper.resetConversation(model = model)
+
+    // Double-check instance after reset
+    if (model.instance == null) {
+      val error = "Model instance became null after resetConversation"
+      Log.e(TAG, "$LOG_MARKER request_id=$requestId event=inference_stream_error error=$error")
+      throw IllegalStateException(error)
+    }
+
     model.runtimeHelper.runInference(
       model = model,
       input = prompt,

@@ -27,7 +27,7 @@ data class ApiServerConfig(
     val apiKey: String = "",
     val maxConcurrent: Int = 2,
     val queueSize: Int = 10,
-    val requestTimeout: Long = 30000L,  // 30 seconds
+    val requestTimeout: Long = 180000L,  // 180 seconds
     val defaultModelId: String = "",
     val defaultTemperature: Double = 0.7,
     val defaultMaxTokens: Int = 1024,

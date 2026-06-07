@@ -20,6 +20,7 @@ import android.app.Application
 import com.google.ai.edge.gallery.data.DataStoreRepository
 import com.google.ai.edge.gallery.data.HttpTrafficLogger
 import com.google.ai.edge.gallery.notifications.NotificationScheduleManager
+import com.google.ai.edge.gallery.server.ApiServerManager
 import com.google.ai.edge.gallery.ui.theme.ThemeSettings
 import com.google.firebase.FirebaseApp
 import dagger.hilt.android.HiltAndroidApp
@@ -45,5 +46,8 @@ class GalleryApplication : Application() {
     ThemeSettings.themeOverride.value = dataStoreRepository.readTheme()
 
     FirebaseApp.initializeApp(this)
+    
+    // Initialize API server process-level manager.
+    ApiServerManager.initialize(this)
   }
 }

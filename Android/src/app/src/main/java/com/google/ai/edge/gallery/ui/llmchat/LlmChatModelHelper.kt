@@ -195,7 +195,8 @@ object LlmChatModelHelper : LlmModelHelper {
     try {
       Log.d(TAG, "Resetting conversation for model '${model.name}'")
 
-      val instance = model.instance as LlmModelInstance? ?: return
+      val instance = model.instance as LlmModelInstance?
+        ?: throw IllegalStateException("Model instance is null, model may not be initialized")
       instance.conversation.close()
 
       val engine = instance.engine

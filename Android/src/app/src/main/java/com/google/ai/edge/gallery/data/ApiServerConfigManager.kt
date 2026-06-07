@@ -67,7 +67,7 @@ class ApiServerConfigManager(private val context: Context) {
             apiKey = sharedPreferences.getString(PreferenceKeys.API_KEY, "") ?: "",
             maxConcurrent = sharedPreferences.getInt(PreferenceKeys.MAX_CONCURRENT, 2),
             queueSize = sharedPreferences.getInt(PreferenceKeys.QUEUE_SIZE, 10),
-            requestTimeout = sharedPreferences.getLong(PreferenceKeys.REQUEST_TIMEOUT, 30000L),
+            requestTimeout = sharedPreferences.getLong(PreferenceKeys.REQUEST_TIMEOUT, 180000L).coerceAtLeast(180000L),
             defaultModelId = sharedPreferences.getString(PreferenceKeys.DEFAULT_MODEL_ID, "") ?: "",
             defaultTemperature = sharedPreferences.getString(PreferenceKeys.DEFAULT_TEMPERATURE, "0.7")?.toDoubleOrNull() ?: 0.7,
             defaultMaxTokens = sharedPreferences.getInt(PreferenceKeys.DEFAULT_MAX_TOKENS, 1024),

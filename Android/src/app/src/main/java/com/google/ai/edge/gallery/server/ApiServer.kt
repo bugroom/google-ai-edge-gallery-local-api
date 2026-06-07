@@ -194,7 +194,7 @@ class ApiServer(
                 } catch (e: IllegalArgumentException) {
                     Log.w(TAG, "$LOG_MARKER event=request_bad_request error=${e.message}", e)
                     HttpTrafficLogger.logError("api-server", "$LOG_MARKER event=request_bad_request error=${e.message}")
-                    writeJson(client, 400, ErrorResponse(error = e.message ?: "Bad request", type = "bad_request"))
+                    writeJsonOrLogDisconnect(client, 400, ErrorResponse(error = e.message ?: "Bad request", type = "bad_request"))
                 } catch (e: SocketException) {
                     Log.i(TAG, "$LOG_MARKER event=client_socket_closed remote=${client.remoteSocketAddress} reason=${e.message}")
                     HttpTrafficLogger.logDebug(
@@ -204,7 +204,7 @@ class ApiServer(
                 } catch (e: Exception) {
                     Log.e(TAG, "$LOG_MARKER event=request_error error=${e.message}", e)
                     HttpTrafficLogger.logError("api-server", "$LOG_MARKER event=request_error error=${e.message}")
-                    writeJson(client, 500, ErrorResponse(error = e.message ?: "Internal error", type = "internal_error"))
+                    writeJsonOrLogDisconnect(client, 500, ErrorResponse(error = e.message ?: "Internal error", type = "internal_error"))
                 }
             }
         } finally {
@@ -325,6 +325,18 @@ class ApiServer(
 
     private inline fun <reified T> writeJson(socket: Socket, statusCode: Int, body: T) {
         writeResponse(socket, statusCode, json.encodeToString(body), "application/json")
+    }
+
+    private inline fun <reified T> writeJsonOrLogDisconnect(socket: Socket, statusCode: Int, body: T) {
+        try {
+            writeJson(socket, statusCode, body)
+        } catch (e: SocketException) {
+            Log.i(TAG, "$LOG_MARKER event=response_client_disconnected status=$statusCode reason=${e.message}")
+            HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER event=response_client_disconnected status=$statusCode reason=${e.message}")
+        } catch (e: IOException) {
+            Log.i(TAG, "$LOG_MARKER event=response_write_failed status=$statusCode reason=${e.message}")
+            HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER event=response_write_failed status=$statusCode reason=${e.message}")
+        }
     }
 
     private fun writeResponse(socket: Socket, statusCode: Int, body: String, contentType: String) {

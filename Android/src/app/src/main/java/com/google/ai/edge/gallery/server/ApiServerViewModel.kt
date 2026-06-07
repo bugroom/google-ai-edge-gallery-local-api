@@ -17,156 +17,48 @@
 package com.google.ai.edge.gallery.server
 
 import android.app.Application
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.data.ApiServerConfig
 import com.google.ai.edge.gallery.data.ApiServerConfigManager
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-
-private const val TAG = "ApiServerViewModel"
 
 /**
- * ViewModel for managing API server
+ * ViewModel bridge for API server UI.
+ *
+ * The server is owned by [ApiServerManager] at application scope so it survives navigation away from
+ * this screen. This ViewModel only exposes configuration and delegates start/stop commands.
  */
 class ApiServerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val configManager = ApiServerConfigManager(application)
-    private var apiServer: ApiServer? = null
-    private var infoRefreshJob: Job? = null
 
-    private val _serverStatus = MutableStateFlow<ServerStatus>(ServerStatus.Stopped)
-    val serverStatus: StateFlow<ServerStatus> = _serverStatus.asStateFlow()
-
-    private val _serverInfo = MutableStateFlow<ServerInfo?>(null)
-    val serverInfo: StateFlow<ServerInfo?> = _serverInfo.asStateFlow()
-
+    val serverStatus: StateFlow<ServerStatus> = ApiServerManager.serverStatus
+    val serverInfo: StateFlow<ServerInfo?> = ApiServerManager.serverInfo
     val configFlow = configManager.configFlow
 
     init {
-        loadConfig()
+        ApiServerManager.initialize(application)
     }
 
-    /**
-     * Load configuration and check if server should be auto-started
-     */
-    private fun loadConfig() {
-        // Auto-start not needed for now, manual control via UI
-    }
-
-    /**
-     * Update API server configuration
-     */
     fun updateConfig(update: (ApiServerConfig) -> ApiServerConfig) {
         configManager.updateConfig(update)
     }
 
-    /**
-     * Start the API server
-     */
     fun startServer(modelManagerViewModel: ModelManagerViewModel) {
-        viewModelScope.launch {
-            try {
-                val config = configManager.configFlow.value
-                val inferenceHandler = ApiInferenceHandler(
-                    context = getApplication(),
-                    modelManagerViewModel = modelManagerViewModel,
-                    maxConcurrent = config.maxConcurrent,
-                    requestTimeoutMs = config.requestTimeout,
-                )
-                apiServer = ApiServer(getApplication(), config, inferenceHandler)
-                apiServer?.start()
-                _serverStatus.value = ServerStatus.Running
-                
-                val info = ServerInfo(
-                    host = config.host,
-                    port = config.port,
-                    uptime = 0L,
-                    connections = 0L
-                )
-                _serverInfo.value = info
-                startInfoRefreshLoop()
-                
-                Log.i(TAG, "LOCAL_API event=viewmodel_server_started host=${config.host} port=${config.port}")
-            } catch (e: Exception) {
-                Log.e(TAG, "LOCAL_API event=viewmodel_server_start_failed error=${e.message}", e)
-                _serverStatus.value = ServerStatus.Error(e.message ?: "Unknown error")
-                apiServer = null
-            }
-        }
+        ApiServerManager.startServer(modelManagerViewModel)
     }
 
-    /**
-     * Stop the API server
-     */
     fun stopServer() {
-        viewModelScope.launch {
-            try {
-                apiServer?.stop()
-                apiServer = null
-                infoRefreshJob?.cancel()
-                infoRefreshJob = null
-                _serverStatus.value = ServerStatus.Stopped
-                _serverInfo.value = null
-                Log.i(TAG, "LOCAL_API event=viewmodel_server_stopped")
-                
-                // Update config to disabled
-                configManager.updateConfig { it.copy(enabled = false) }
-            } catch (e: Exception) {
-                Log.e(TAG, "LOCAL_API event=viewmodel_server_stop_failed error=${e.message}", e)
-                _serverStatus.value = ServerStatus.Error(e.message ?: "Unknown error")
-            }
-        }
+        ApiServerManager.stopServer()
     }
 
-    /**
-     * Generate a new API key
-     */
     fun generateApiKey(): String {
         return configManager.generateApiKey()
     }
 
-    /**
-     * Get current server info
-     */
     fun refreshServerInfo() {
-        viewModelScope.launch {
-            refreshServerInfoNow()
-        }
-    }
-
-    private fun startInfoRefreshLoop() {
-        infoRefreshJob?.cancel()
-        infoRefreshJob = viewModelScope.launch {
-            while (isActive && apiServer != null) {
-                refreshServerInfoNow()
-                delay(1000L)
-            }
-        }
-    }
-
-    private fun refreshServerInfoNow() {
-            val config = configManager.configFlow.value
-            val server = apiServer ?: return
-            val info = ServerInfo(
-                host = config.host,
-                port = config.port,
-                uptime = server.getUptime(),
-                connections = server.getCurrentConnections()
-            )
-            _serverInfo.value = info
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        infoRefreshJob?.cancel()
+        ApiServerManager.refreshServerInfo()
     }
 }
 
@@ -186,5 +78,5 @@ data class ServerInfo(
     val host: String,
     val port: Int,
     val uptime: Long,
-    val connections: Long
+    val connections: Long,
 )

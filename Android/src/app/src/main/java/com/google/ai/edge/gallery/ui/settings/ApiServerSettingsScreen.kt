@@ -128,11 +128,8 @@ fun ApiServerSettingsScreen(
                 )
             }
             Switch(
-                checked = config.enabled,
+                checked = serverStatus is ServerStatus.Running,
                 onCheckedChange = { enabled: Boolean ->
-                    viewModel.updateConfig { currentConfig: ApiServerConfig ->
-                        currentConfig.copy(enabled = enabled)
-                    }
                     if (enabled) {
                         viewModel.startServer(modelManagerViewModel)
                     } else {
@@ -143,42 +140,40 @@ fun ApiServerSettingsScreen(
         }
 
         // Status Card
-        if (config.enabled) {
-            when (serverStatus) {
-                is ServerStatus.Running -> {
-                    StatusCard(
-                        status = "运行中",
-                        host = config.host,
-                        lanIp = lanIp,
-                        port = config.port,
-                        uptime = serverInfo?.uptime ?: 0,
-                        connections = serverInfo?.connections ?: 0,
-                        isRunning = true
-                    )
-                }
-                is ServerStatus.Stopped -> {
-                    StatusCard(
-                        status = "已停止",
-                        host = config.host,
-                        lanIp = lanIp,
-                        port = config.port,
-                        uptime = 0,
-                        connections = 0,
-                        isRunning = false
-                    )
-                }
-                is ServerStatus.Error -> {
-                    StatusCard(
-                        status = "错误",
-                        host = config.host,
-                        lanIp = lanIp,
-                        port = config.port,
-                        uptime = 0,
-                        connections = 0,
-                        isRunning = false,
-                        error = (serverStatus as ServerStatus.Error).message
-                    )
-                }
+        when (serverStatus) {
+            is ServerStatus.Running -> {
+                StatusCard(
+                    status = "运行中",
+                    host = config.host,
+                    lanIp = lanIp,
+                    port = config.port,
+                    uptime = serverInfo?.uptime ?: 0,
+                    connections = serverInfo?.connections ?: 0,
+                    isRunning = true
+                )
+            }
+            is ServerStatus.Stopped -> {
+                StatusCard(
+                    status = "已停止",
+                    host = config.host,
+                    lanIp = lanIp,
+                    port = config.port,
+                    uptime = 0,
+                    connections = 0,
+                    isRunning = false
+                )
+            }
+            is ServerStatus.Error -> {
+                StatusCard(
+                    status = "错误",
+                    host = config.host,
+                    lanIp = lanIp,
+                    port = config.port,
+                    uptime = 0,
+                    connections = 0,
+                    isRunning = false,
+                    error = (serverStatus as ServerStatus.Error).message
+                )
             }
         }
 
@@ -273,7 +268,7 @@ fun ApiServerSettingsScreen(
                                 currentConfig.copy(defaultAccelerator = accelerator.label)
                             }
                         },
-                        enabled = !config.enabled,
+                        enabled = serverStatus !is ServerStatus.Running,
                         colors = if (isSelected) {
                             androidx.compose.material3.ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary
@@ -299,7 +294,7 @@ fun ApiServerSettingsScreen(
                                 currentConfig.copy(defaultVisionAccelerator = accelerator.label)
                             }
                         },
-                        enabled = !config.enabled,
+                        enabled = serverStatus !is ServerStatus.Running,
                         colors = if (isSelected) {
                             androidx.compose.material3.ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary
@@ -336,7 +331,7 @@ fun ApiServerSettingsScreen(
                     }
                 },
                 label = { Text("Temperature") },
-                enabled = !config.enabled,
+                enabled = serverStatus !is ServerStatus.Running,
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
@@ -350,7 +345,7 @@ fun ApiServerSettingsScreen(
                     }
                 },
                 label = { Text("Max tokens") },
-                enabled = !config.enabled,
+                enabled = serverStatus !is ServerStatus.Running,
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
@@ -364,7 +359,7 @@ fun ApiServerSettingsScreen(
                     }
                 },
                 label = { Text("Top P") },
-                enabled = !config.enabled,
+                enabled = serverStatus !is ServerStatus.Running,
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
@@ -378,7 +373,7 @@ fun ApiServerSettingsScreen(
                     }
                 },
                 label = { Text("Top K") },
-                enabled = !config.enabled,
+                enabled = serverStatus !is ServerStatus.Running,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -394,7 +389,7 @@ fun ApiServerSettingsScreen(
                 }
             },
             label = { Text("端口") },
-            enabled = !config.enabled,
+            enabled = serverStatus !is ServerStatus.Running,
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -416,7 +411,7 @@ fun ApiServerSettingsScreen(
                                 currentConfig.copy(authType = type)
                             }
                         },
-                        enabled = !config.enabled,
+                        enabled = serverStatus !is ServerStatus.Running,
                         colors = if (isSelected) {
                             androidx.compose.material3.ButtonDefaults.buttonColors(
                                 containerColor = androidx.compose.material3.MaterialTheme.colorScheme.primary
@@ -453,7 +448,7 @@ OutlinedTextField(
                     Icon(Icons.Default.Refresh, "生成随机Key")
                 }
             },
-            enabled = !config.enabled,
+            enabled = serverStatus !is ServerStatus.Running,
             modifier = Modifier.fillMaxWidth()
         )
         }
