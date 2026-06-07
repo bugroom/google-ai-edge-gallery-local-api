@@ -15,6 +15,7 @@
 - [快速开始](#快速开始)
 - [API 手册](#api-手册)
 - [构建说明](#构建说明)
+- [GitHub Actions 工作流适配](#github-actions-工作流适配)
 - [故障排查](#故障排查)
 - [当前限制](#当前限制)
 - [变更记录](#变更记录)
@@ -292,6 +293,148 @@ Android/src/app/build/outputs/apk/release/app-release.apk
 ```
 
 更多构建环境、常见问题、性能优化和真机调试说明见 [BUILD_MANUAL.md](BUILD_MANUAL.md)。
+
+## GitHub Actions 工作流适配
+
+Android APK 构建工作流位于：
+
+```text
+.github/workflows/build_android.yaml
+```
+
+### 项目目录映射
+
+当前仓库的 Android 工程位于 `Android/src`，Gradle wrapper 位于：
+
+```text
+Android/src/gradlew
+```
+
+工作流通过 `defaults.run.working-directory` 固定执行目录：
+
+```yaml
+defaults:
+  run:
+    working-directory: ./Android/src
+```
+
+因此所有 Gradle 命令都从 `Android/src` 目录执行。
+
+### 触发规则
+
+当前工作流支持手动触发、push 触发和 pull request 触发：
+
+```yaml
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "feature/local-api-server"]
+    paths:
+      - "Android/**"
+      - ".github/workflows/build_android.yaml"
+  pull_request:
+    branches: ["main", "feature/local-api-server"]
+    paths:
+      - "Android/**"
+      - ".github/workflows/build_android.yaml"
+```
+
+适配关系如下：
+
+| 配置项 | 当前值 | 说明 |
+|--------|--------|------|
+| 默认开发分支 | `feature/local-api-server` | 当前仓库默认分支 |
+| 兼容分支 | `main` | 保留常规主分支触发 |
+| Android 触发路径 | `Android/**` | Android 工程变化时触发构建 |
+| 工作流触发路径 | `.github/workflows/build_android.yaml` | CI 配置变化时触发自检 |
+
+### 构建环境
+
+工作流使用 Ubuntu runner、Temurin JDK 21 和 Gradle 官方缓存：
+
+```yaml
+runs-on: ubuntu-latest
+
+- uses: actions/setup-java@v4
+  with:
+    distribution: temurin
+    java-version: "21"
+
+- uses: gradle/actions/setup-gradle@v4
+```
+
+JDK 21 与当前 Android Gradle Plugin / Kotlin 构建链路兼容。Gradle 缓存用于减少后续构建耗时。
+
+### 构建命令
+
+工作流构建 Release APK：
+
+```yaml
+- name: Make Gradle wrapper executable
+  run: chmod +x ./gradlew
+
+- name: Build release APK
+  run: ./gradlew :app:assembleRelease
+```
+
+本地等价命令：
+
+```bash
+# Enter Android project
+cd Android/src
+
+# Build release APK
+./gradlew :app:assembleRelease
+```
+
+### APK 产物上传
+
+构建完成后，工作流会上传 APK artifact：
+
+```yaml
+- name: Upload release APK
+  uses: actions/upload-artifact@v4
+  with:
+    name: google-ai-edge-gallery-local-api-release
+    path: Android/src/app/build/outputs/apk/release/app-release.apk
+```
+
+在 GitHub 页面下载路径：
+
+1. 打开仓库的 `Actions` 页面。
+2. 选择一次 `Build Android APK` workflow run。
+3. 在页面底部 `Artifacts` 区域下载 `google-ai-edge-gallery-local-api-release`。
+
+### 工作流权限与分支保护
+
+当前仓库建议保持以下安全配置：
+
+| 配置 | 推荐值 | 说明 |
+|------|--------|------|
+| Actions default workflow permissions | `read` | 工作流默认只读仓库内容 |
+| can approve pull request reviews | `false` | 禁止 Actions 自动批准 PR |
+| 默认分支保护 | 开启 | 防止分支被误删或强推 |
+| Required approving reviews | `1` | 合并 PR 至少需要一次审核 |
+| Allow force pushes | 关闭 | 防止强制覆盖历史 |
+| Allow deletions | 关闭 | 防止删除默认分支 |
+
+当前默认分支是 `feature/local-api-server`。如果后续默认分支改为 `main`，需要同步更新：
+
+- `.github/workflows/build_android.yaml` 的 `branches` 列表。
+- GitHub 仓库 `Settings -> Branches` 中的分支保护规则。
+- README 中本节的默认分支说明。
+
+### 适配检查清单
+
+修改工作流或 Android 工程结构后，按以下清单检查：
+
+- `Android/src/gradlew` 是否存在。
+- `Android/src/settings.gradle.kts` 是否存在。
+- `defaults.run.working-directory` 是否仍指向 `./Android/src`。
+- 构建命令是否仍为 `./gradlew :app:assembleRelease`。
+- APK 输出路径是否仍为 `Android/src/app/build/outputs/apk/release/app-release.apk`。
+- 触发分支是否包含当前默认分支。
+- artifact 上传路径是否匹配实际 APK 输出路径。
 
 ## 故障排查
 
