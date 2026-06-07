@@ -332,12 +332,13 @@ cd Android/src
 
 `Android/src/app/build/outputs/apk/release/app-release.apk`
 
+> 详细编译手册见 [BUILD_MANUAL.md](BUILD_MANUAL.md)，包含环境准备、常见问题解答、性能优化和真机调试指南。
+
 ## 变更记录
 
 - `feat: add local API server support`
 - `feat: connect local API server to LLM inference`
 - `feat: add streaming response support`
-- `feat: add API debug helper APK`
 - `fix: model instance lifecycle management`
 - `fix: streaming response content parsing`
 
