@@ -408,7 +408,27 @@ class ApiServer(
             
             val requestId = "chatcmpl-${System.currentTimeMillis()}"
             val startTime = System.currentTimeMillis()
-            
+            var doneSent = false
+            fun writeDoneEvent() {
+                val streamEvent = StreamChatChunk(
+                    id = requestId,
+                    `object` = "chat.completion.chunk",
+                    created = System.currentTimeMillis() / 1000,
+                    model = request.model,
+                    choices = listOf(
+                        StreamChoice(
+                            index = 0,
+                            delta = StreamDelta(content = "", role = null),
+                            finish_reason = "stop"
+                        )
+                    )
+                )
+                writer.write("data: ${json.encodeToString(streamEvent)}\n\n")
+                writer.write("data: [DONE]\n\n")
+                writer.flush()
+                doneSent = true
+            }
+
             runBlocking {
                 try {
                     inferenceHandler.handleStreamChatCompletion(request) { chunk, done ->
@@ -429,10 +449,11 @@ class ApiServer(
                             val line = "data: ${json.encodeToString(streamEvent)}\n\n"
                             writer.write(line)
                             writer.flush()
-                            
+
                             if (done) {
                                 writer.write("data: [DONE]\n\n")
                                 writer.flush()
+                                doneSent = true
                             }
                         } catch (e: SocketException) {
                             throw ClientDisconnectedException("Client disconnected: ${e.message}")
@@ -440,7 +461,11 @@ class ApiServer(
                             throw ClientDisconnectedException("Client disconnected: ${e.message}")
                         }
                     }
-                    
+
+                    if (!doneSent) {
+                        writeDoneEvent()
+                    }
+
                     HttpTrafficLogger.logResponse("/v1/chat/completions", 200, "$LOG_MARKER event=chat_stream_done request_id=$requestId model=${request.model} duration=${System.currentTimeMillis() - startTime}")
                 } catch (e: ClientDisconnectedException) {
                     Log.i(TAG, "$LOG_MARKER event=chat_stream_client_disconnected request_id=$requestId model=${request.model} reason=${e.message}")

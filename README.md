@@ -1,37 +1,46 @@
-# Google AI Edge Gallery 本地 API 魔改版
+# Google AI Edge Gallery 本地 API 版
 
-#·[代码全由Ai修改生成]
+> 代码全由 AI 修改生成。
 
-## 项目介绍
+基于 [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery) 修改的 Android 项目。这个版本把 App 内的本地 LLM 推理能力扩展为可由本机或局域网客户端调用的 OpenAI 兼容 API 服务。
 
-这是基于 Google AI Edge Gallery 的 Android 魔改版，核心目标是把原本只能在 App 内使用的本地 LLM 能力，扩展成可由其他客户端调用的本地 API 服务。项目支持在手机端下载模型、选择默认模型、配置推理参数和推理后端，并通过 OpenAI 兼容接口向局域网或本机客户端提供推理能力。
+- 上游项目：[google-ai-edge/gallery](https://github.com/google-ai-edge/gallery)
+- 当前仓库：[bugroom/google-ai-edge-gallery-local-api](https://github.com/bugroom/google-ai-edge-gallery-local-api)
+- 构建手册：[BUILD_MANUAL.md](BUILD_MANUAL.md)
 
-上游项目：`https://github.com/google-ai-edge/gallery`
+## 目录
 
-当前仓库：`https://github.com/bugroom/google-ai-edge-gallery-local-api`
+- [当前状态](#当前状态)
+- [功能概览](#功能概览)
+- [快速开始](#快速开始)
+- [API 手册](#api-手册)
+- [构建说明](#构建说明)
+- [故障排查](#故障排查)
+- [当前限制](#当前限制)
+- [变更记录](#变更记录)
+- [License](#license)
 
 ## 当前状态
 
 - Release APK 已可构建通过。
-- Android 最低版本已下调到 Android 9.0。
+- Android 最低版本为 Android 9.0，`minSdk = 28`。
 - 模型下载源保持官方 Hugging Face 源。
-- 已新增本地 API Server 侧栏入口。
-- 已接入 OpenAI 兼容接口和 LiteRT-LM 推理链路。
-- 已支持默认模型、采样参数和 CPU/GPU/NPU/TPU 推理后端配置。
-- 已添加统一日志标记 `LOCAL_API`，方便后续排查问题。
-- 真机端到端调用仍建议结合实际已下载模型继续测试。
+- 本地 API Server 已独立为侧栏入口。
+- OpenAI 兼容接口已接入 LiteRT-LM 推理链路。
+- 已支持默认模型、采样参数、API Key 和 CPU/GPU/NPU/TPU 推理后端配置。
+- 流式响应已支持 SSE chunk、客户端断开处理和 `data: [DONE]` 结束事件。
+- 本地 API 相关日志统一使用 `LOCAL_API` 标记。
 
-## 主要魔改内容
+## 功能概览
 
 ### Android 兼容性
 
 - `minSdk` 从 31 调整为 28，支持 Android 9.0 及以上设备。
-- 新增 `ApiCompatibilityHelper`，用于处理部分 Android API 版本兼容逻辑。
-- 主题切换已兼容 Android 12 以下设备，避免低版本系统调用 `UiModeManager.setApplicationNightMode()` 崩溃。
+- 新增 `ApiCompatibilityHelper` 处理部分 Android API 版本兼容逻辑。
+- 主题切换已兼容 Android 12 以下设备。
 - Release 构建限制 `arm64-v8a`，降低 APK 体积。
-
-- 配置弹窗的数值滑块已兼容 `Int`、`Float`、`Double` 等数值类型，避免默认参数写入后再次打开配置时类型转换崩溃。
-- API 服务由应用进程级 `ApiServerManager` 持有，离开 `API Server` 页面或返回首页后会继续运行。
+- 配置弹窗数值滑块兼容 `Int`、`Float`、`Double` 等类型。
+- API 服务由应用进程级 `ApiServerManager` 持有，离开 API Server 页面后继续运行。
 
 ### 中文化
 
@@ -42,69 +51,26 @@
 
 - 模型下载源保留官方 Hugging Face 源。
 - 新增 HTTP 下载日志能力。
-- 新增日志查看页面，便于复制和排查下载问题。
+- 新增日志查看页面，支持复制日志用于排查问题。
 
 ### 本地 API Server
 
-- 新增本地 API 服务配置：启用状态、监听地址、端口、认证方式、API Key、并发数、队列大小、请求超时、默认模型、默认采样参数、文本推理后端和视觉输入后端。
-- 新增 API 设置入口：侧栏 -> API Server。
-- 新增 native `ServerSocket` HTTP Server。
-- 新增 API Key 鉴权：`Authorization: Bearer <apiKey>`。
-- 新增 CORS 支持。
-- 新增 OpenAI 兼容接口：
-  - `GET /health`
-  - `GET /v1/models`
-  - `GET /v1/engines`
-  - `POST /v1/chat/completions`
-- `/v1/models` 和 `/v1/engines` 返回已下载的 LLM 模型。
-- `/v1/chat/completions` 已接入现有 LiteRT-LM 推理流程。
-- `stream: true` 支持 SSE 流式响应。
-- 请求未传 `model`、`temperature`、`max_tokens`、`top_p`、`top_k`、`accelerator`、`vision_accelerator` 时，会使用 API Server 页面中的默认配置。
+- 入口：侧栏 -> `API Server`。
+- HTTP 服务实现：native `ServerSocket`。
+- 认证方式：无认证或 API Key。
+- 认证头：`Authorization: Bearer <apiKey>`。
+- 网络支持：本机访问和局域网访问。
+- CORS：已支持跨域请求。
+- 模型来源：已下载的 LLM 模型。
+- 推理链路：复用现有 LiteRT-LM 运行时。
 
-- 本地 API 流式响应已兼容客户端主动断开、连接重置和 socket 关闭场景，避免正常断连被记录为崩溃。
-
-### 可观测性
-
-本地 API 相关日志统一使用 `LOCAL_API` 标记，并尽量包含以下字段：
-
-- `request_id`
-- `event`
-- `model`
-- `path`
-- `duration_ms`
-- `error`
-- `auth_type`
-
-可通过 Logcat 过滤：
-
-```bash
-# Filter local API logs
-adb logcat | grep LOCAL_API
-```
-
-## API 使用手册
-
-### 快速开始
-
-#### 1. 在 App 内启动服务
-
-1. 安装并打开 App
-2. 下载一个支持 LLM 的模型（如 Gemma 2B 或 Qwen2.5）
-3. 从侧栏进入 `API Server`
-4. 选择默认模型
-5. 配置默认采样参数和推理后端
-6. 配置监听地址和端口
-7. 如需外部设备访问，选择 `0.0.0.0`
-8. 如启用 API Key，复制生成的 Key
-9. 打开 API 服务开关
-
-**默认配置：**
+### 可配置参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| Host | `127.0.0.1` | 本机访问，如需局域网访问请改为 `0.0.0.0` |
+| Host | `127.0.0.1` | 本机访问；局域网访问设置为 `0.0.0.0` |
 | Port | `8080` | 服务监听端口 |
-| Auth | `NONE` | 可选 `API_KEY` 认证 |
+| Auth | `NONE` | 可选 `API_KEY` |
 | Temperature | `0.7` | 采样温度，范围 0-2 |
 | Max tokens | `1024` | 最大生成 token 数 |
 | Top P | `0.95` | 核采样概率阈值 |
@@ -112,19 +78,59 @@ adb logcat | grep LOCAL_API
 | Accelerator | `GPU` | 文本推理后端：CPU/GPU/NPU/TPU |
 | Vision accelerator | `GPU` | 视觉输入后端：CPU/GPU/NPU/TPU |
 
-**重要提示：** 局域网访问时，手机和客户端设备需要位于同一网络。使用 `0.0.0.0` 监听后，客户端应访问手机的局域网 IP。
+### 日志标记
 
----
+本地 API 相关日志统一使用 `LOCAL_API`，常见字段如下：
 
-### API 端点详解
+| 字段 | 说明 |
+|------|------|
+| `request_id` | 请求 ID |
+| `event` | 事件名称 |
+| `model` | 模型 ID |
+| `path` | HTTP 路径 |
+| `duration_ms` | 请求耗时 |
+| `error` | 错误信息 |
+| `auth_type` | 认证方式 |
 
-#### 健康检查
+```bash
+# Filter local API logs
+adb logcat | grep LOCAL_API
+```
+
+## 快速开始
+
+1. 安装并打开 App。
+2. 下载一个支持 LLM 的模型，例如 Gemma 或 Qwen。
+3. 从侧栏进入 `API Server`。
+4. 选择默认模型。
+5. 配置默认采样参数和推理后端。
+6. 配置监听地址和端口。
+7. 局域网访问场景将 Host 设置为 `0.0.0.0`。
+8. 按需启用 API Key 并复制 Key。
+9. 打开 API 服务开关。
+10. 使用 `/health` 或 `/v1/models` 验证服务。
+
+局域网访问时，手机和客户端设备需要位于同一网络。Host 设置为 `0.0.0.0` 后，客户端应访问手机的局域网 IP。
+
+## API 手册
+
+### 端点总览
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/health` | 健康检查 |
+| GET | `/v1/models` | 获取已下载 LLM 模型列表 |
+| GET | `/v1/engines` | 获取已下载 LLM 引擎列表 |
+| POST | `/v1/chat/completions` | 聊天补全，支持非流式和流式 |
+
+### 健康检查
 
 ```bash
 curl http://127.0.0.1:8080/health
 ```
 
-**响应示例：**
+响应示例：
+
 ```json
 {
   "status": "ok",
@@ -134,20 +140,23 @@ curl http://127.0.0.1:8080/health
 }
 ```
 
----
+### 获取模型列表
 
-#### 获取模型列表
+无认证：
 
 ```bash
-# 无认证
 curl http://127.0.0.1:8080/v1/models
+```
 
-# 带 API Key 认证
+带 API Key 认证：
+
+```bash
 curl http://127.0.0.1:8080/v1/models \
   -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
-**响应示例：**
+响应示例：
+
 ```json
 {
   "object": "list",
@@ -157,20 +166,14 @@ curl http://127.0.0.1:8080/v1/models \
       "object": "model",
       "owned_by": "litert-community",
       "created": 1780680000
-    },
-    {
-      "id": "gemma-2b-it",
-      "object": "model",
-      "owned_by": "google",
-      "created": 1780680000
     }
   ]
 }
 ```
 
----
+### 聊天补全
 
-#### 聊天补全（非流式）
+非流式请求：
 
 ```bash
 curl http://127.0.0.1:8080/v1/chat/completions \
@@ -190,21 +193,8 @@ curl http://127.0.0.1:8080/v1/chat/completions \
   }'
 ```
 
-**请求参数说明：**
+响应示例：
 
-| 参数 | 类型 | 必需 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `model` | string | 否 | 默认模型 | 模型 ID，不传则使用 API Server 页面设置的默认模型 |
-| `messages` | array | 是 | - | 对话消息列表，每个消息包含 `role` 和 `content` |
-| `temperature` | float | 否 | 0.7 | 采样温度，0-2 之间 |
-| `max_tokens` | integer | 否 | 1024 | 最大生成 token 数 |
-| `top_p` | float | 否 | 0.95 | 核采样概率阈值 |
-| `top_k` | integer | 否 | 40 | Top-K 采样限制 |
-| `accelerator` | string | 否 | GPU | 文本推理后端：CPU/GPU/NPU/TPU |
-| `vision_accelerator` | string | 否 | GPU | 视觉输入后端 |
-| `stream` | boolean | 否 | false | 是否启用流式响应 |
-
-**响应示例：**
 ```json
 {
   "id": "chatcmpl-xxx",
@@ -216,7 +206,7 @@ curl http://127.0.0.1:8080/v1/chat/completions \
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "你好！很高兴为你服务..."
+        "content": "你好！很高兴为你服务。"
       },
       "finish_reason": "stop"
     }
@@ -229,9 +219,21 @@ curl http://127.0.0.1:8080/v1/chat/completions \
 }
 ```
 
----
+请求参数：
 
-#### 聊天补全（流式）
+| 参数 | 类型 | 必需 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `model` | string | 否 | 默认模型 | 模型 ID；空值使用 API Server 页面设置的默认模型 |
+| `messages` | array | 是 | - | 对话消息列表，每个消息包含 `role` 和 `content` |
+| `temperature` | float | 否 | 0.7 | 采样温度，范围 0-2 |
+| `max_tokens` | integer | 否 | 1024 | 最大生成 token 数 |
+| `top_p` | float | 否 | 0.95 | 核采样概率阈值 |
+| `top_k` | integer | 否 | 40 | Top-K 采样限制 |
+| `accelerator` | string | 否 | GPU | 文本推理后端：CPU/GPU/NPU/TPU |
+| `vision_accelerator` | string | 否 | GPU | 视觉输入后端：CPU/GPU/NPU/TPU |
+| `stream` | boolean | 否 | false | 是否启用流式响应 |
+
+### 流式聊天补全
 
 ```bash
 curl http://127.0.0.1:8080/v1/chat/completions \
@@ -246,70 +248,23 @@ curl http://127.0.0.1:8080/v1/chat/completions \
   }'
 ```
 
-**流式响应格式：**
+流式响应使用 Server-Sent Events 格式：
 
-流式响应使用 Server-Sent Events (SSE) 格式，每个 chunk 以 `data:` 开头：
+```text
+data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk","choices":[{"delta":{"content":"你好"}}]}
 
-```
-data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk",...}
+data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk","choices":[{"delta":{"content":"！"}}]}
 
-data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk",...}
+data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk","choices":[{"delta":{"content":""},"finish_reason":"stop"}]}
 
 data: [DONE]
 ```
 
-每个 chunk 包含部分生成的文本，客户端应累积显示。流式输出是逐 token 返回的，每个 token 可能包含一个或几个汉字，这是 LLM 推理的正常行为。
-
----
-
-### 故障排查
-
-#### 服务无法启动
-
-- 检查端口是否被占用
-- 检查监听地址是否为 `127.0.0.1` 或 `0.0.0.0`
-- 使用 Logcat 搜索 `LOCAL_API event=server_start_failed`
-
-#### 401 Unauthorized
-
-- 检查是否启用了 API Key
-- 检查请求头是否包含 `Authorization: Bearer YOUR_API_KEY`
-- 使用 Logcat 搜索 `LOCAL_API event=auth_failed`
-
-#### 模型列表为空
-
-- 先在 App 内下载一个 LLM 模型
-- 仅下载成功且 `isLlm = true` 的模型会返回
-- 使用 Logcat 搜索 `LOCAL_API event=models_list`
-
-#### 聊天补全失败
-
-- 确认 `model` 参数等于 `/v1/models` 返回的 `id`
-- 确认模型已下载成功
-- 查看 `LOCAL_API request_id=<id>` 相关日志
-- 重点搜索 `model_init_error`、`inference_start`、`chat_error`、`chat_timeout`
-
-#### 流式响应无内容显示
-
-- 确认 `stream: true` 已设置
-- 检查客户端是否正确解析 SSE 格式
-- 使用 API 调试助手测试验证
-
----
-
-## 当前限制
-
-- 多模态输入（图片、音频）暂未开放为 API 参数
-- Token 统计为估算值（按字符数/4）
-- 真机性能取决于设备、模型大小和加速器配置
-- 本地 API 服务随 App 进程运行，App 进程被系统回收后服务会停止
-- 流式响应为逐 token 返回，每个 token 可能包含 1-4 个汉字
-
----
+客户端应累积每个 chunk 的 `choices[0].delta.content`。服务端正常结束时会发送 `data: [DONE]`。
 
 ## 构建说明
 
-开发环境位于 Android 工程目录：
+Android 工程目录：
 
 ```bash
 # Enter Android project
@@ -330,20 +285,67 @@ cd Android/src
 ./gradlew :app:assembleRelease
 ```
 
-生成文件：
+APK 输出路径：
 
-`Android/src/app/build/outputs/apk/release/app-release.apk`
+```text
+Android/src/app/build/outputs/apk/release/app-release.apk
+```
 
-> 详细编译手册见 [BUILD_MANUAL.md](BUILD_MANUAL.md)，包含环境准备、常见问题解答、性能优化和真机调试指南。
+更多构建环境、常见问题、性能优化和真机调试说明见 [BUILD_MANUAL.md](BUILD_MANUAL.md)。
+
+## 故障排查
+
+### 服务无法启动
+
+- 检查端口是否被占用。
+- 检查监听地址是否为 `127.0.0.1` 或 `0.0.0.0`。
+- 使用 Logcat 搜索 `LOCAL_API event=server_start_failed`。
+
+### 401 Unauthorized
+
+- 检查 API Server 页面是否启用了 API Key。
+- 检查请求头是否包含 `Authorization: Bearer YOUR_API_KEY`。
+- 使用 Logcat 搜索 `LOCAL_API event=auth_failed`。
+
+### 模型列表为空
+
+- 先在 App 内下载一个 LLM 模型。
+- 仅下载成功且 `isLlm = true` 的模型会返回。
+- 使用 Logcat 搜索 `LOCAL_API event=models_list`。
+
+### 聊天补全失败
+
+- 确认 `model` 参数等于 `/v1/models` 返回的 `id`。
+- 确认模型已下载成功。
+- 查看 `LOCAL_API request_id=<id>` 相关日志。
+- 重点搜索 `model_init_error`、`inference_start`、`chat_error`、`chat_timeout`。
+
+### 流式响应无内容显示
+
+- 确认请求体包含 `"stream": true`。
+- 检查客户端是否按 SSE 格式解析 `data:` 事件。
+- 检查客户端是否累积 `choices[0].delta.content`。
+- 检查流结束事件 `data: [DONE]` 是否到达。
+
+## 当前限制
+
+- 多模态输入（图片、音频）暂未开放为 API 参数。
+- Token 统计为估算值（按字符数/4）。
+- 真机性能取决于设备、模型大小和加速器配置。
+- 本地 API 服务随 App 进程运行，App 进程被系统回收后服务会停止。
+- 流式响应为逐 token 返回，每个 token 可能包含 1-4 个汉字。
 
 ## 变更记录
 
 - `feat: add local API server support`
 - `feat: connect local API server to LLM inference`
 - `feat: add streaming response support`
+- `feat: add API server sidebar settings`
+- `feat: add API defaults and accelerator settings`
 - `fix: model instance lifecycle management`
 - `fix: streaming response content parsing`
+- `fix: send data: [DONE] at stream end`
 
 ## License
 
-本项目基于 Google AI Edge Gallery 修改，保留上游 Apache License 2.0 授权。详见 `LICENSE`。
+本项目基于 Google AI Edge Gallery 修改，保留上游 Apache License 2.0 授权。详见 [LICENSE](LICENSE)。
