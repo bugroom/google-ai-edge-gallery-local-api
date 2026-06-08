@@ -390,9 +390,11 @@ cd Android/src
 ./gradlew :app:assembleRelease
 ```
 
-### APK 产物上传
+### APK 产物上传与自动发布
 
-构建完成后，工作流会上传 APK artifact：
+构建完成后，工作流会执行两步操作：
+
+#### 1. Artifact 上传
 
 ```yaml
 - name: Upload release APK
@@ -402,11 +404,33 @@ cd Android/src
     path: Android/src/app/build/outputs/apk/release/app-release.apk
 ```
 
-在 GitHub 页面下载路径：
+临时下载路径：
 
 1. 打开仓库的 `Actions` 页面。
 2. 选择一次 `Build Android APK` workflow run。
 3. 在页面底部 `Artifacts` 区域下载 `google-ai-edge-gallery-local-api-release`。
+
+#### 2. Release 自动发布
+
+工作流会自动创建/更新 GitHub Release：
+
+```yaml
+- name: Create Release
+  uses: softprops/action-gh-release@v2
+  with:
+    tag_name: v1.0.15-latest
+    name: Gallery Local API - Latest Build
+    files: Android/src/app/build/outputs/apk/release/app-release.apk
+    prerelease: true
+```
+
+**稳定下载地址**:
+- 直接链接: `https://github.com/bugroom/google-ai-edge-gallery-local-api/releases`
+- Release 标签: `v1.0.15-latest`（预发布版本）
+
+**注意**: 
+- Artifact 保存期为 90 天，Release 中的文件永久保存
+- 建议优先从 Releases 页面下载
 
 ### 工作流权限与分支保护
 
