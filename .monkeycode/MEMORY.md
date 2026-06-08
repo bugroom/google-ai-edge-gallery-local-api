@@ -42,3 +42,11 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
 - Context: 用户要求后续开发时记得同步更新 README.md
 - Instructions:
   - 后续涉及功能、构建、使用方式、接口参数或项目说明变化时，同步更新 README.md。
+
+[GitHub 推送约束]
+- Date: 2026-06-08
+- Context: 用户明确要求撤回未经同意推送的 API_ARCHITECTURE.md 文档后强调
+- Instructions:
+  - 不要擅自推送任何内容到 GitHub 仓库。
+  - 项目需要同步推送到 GitHub 时，用户自己会明确说明。
+  - 等待用户明确许可后再执行 git push 操作。
