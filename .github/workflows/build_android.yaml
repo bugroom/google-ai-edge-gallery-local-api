@@ -2,15 +2,6 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ "main", "feature/local-api-server" ]
-    paths:
-      - 'Android/**'
-      - '.github/workflows/build_android.yaml'
-      - 'README.md'
-      - 'BUILD_MANUAL.md'
-  pull_request:
-    branches: [ "main", "feature/local-api-server" ]
 
 jobs:
   build_apk:
@@ -45,7 +36,6 @@ jobs:
           path: Android/src/app/build/outputs/apk/release/app-release.apk
 
       - name: Create Release
-        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.15-latest
