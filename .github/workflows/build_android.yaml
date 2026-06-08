@@ -44,3 +44,32 @@ jobs:
         with:
           name: google-ai-edge-gallery-local-api-release
           path: Android/src/app/build/outputs/apk/release/app-release.apk
+
+      - name: Create Release
+        if: github.ref == 'refs/heads/feature/local-api-server' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.15-latest
+          name: Gallery Local API - Latest Build
+          body: |
+            自动构建的 APK 文件
+            
+            **版本**: v1.0.15
+            **构建时间**: ${{ github.event.head_commit.timestamp }}
+            **提交**: ${{ github.sha }}
+            
+            ### 安装说明
+            1. 下载 `app-release.apk`
+            2. 在 Android 设备上安装（需要允许未知来源应用）
+            3. 首次启动需要下载 LLM 模型
+            
+            ### 注意事项
+            - 此版本为自动构建，可能包含未测试的功能
+            - 生产环境使用请等待正式 Release
+          files: |
+            Android/src/app/build/outputs/apk/release/app-release.apk
+          draft: false
+          prerelease: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
