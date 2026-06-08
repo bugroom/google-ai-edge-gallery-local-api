@@ -6,6 +6,7 @@
 
 - 上游项目：[google-ai-edge/gallery](https://github.com/google-ai-edge/gallery)
 - 当前仓库：[bugroom/google-ai-edge-gallery-local-api](https://github.com/bugroom/google-ai-edge-gallery-local-api)
+- API 调试助手：[bugroom/local-api-debug-helper](https://github.com/bugroom/local-api-debug-helper)
 - 构建手册：[BUILD_MANUAL.md](BUILD_MANUAL.md)
 
 ## 目录
@@ -114,6 +115,8 @@ adb logcat | grep LOCAL_API
 局域网访问时，手机和客户端设备需要位于同一网络。Host 设置为 `0.0.0.0` 后，客户端应访问手机的局域网 IP。
 
 ## API 手册
+
+可使用独立调试工具 [local-api-debug-helper](https://github.com/bugroom/local-api-debug-helper) 验证 `/health`、`/v1/models` 和 `/v1/chat/completions`，支持非流式与流式响应测试。
 
 ### 端点总览
 
