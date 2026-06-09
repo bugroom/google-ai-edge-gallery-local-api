@@ -45,8 +45,8 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
 
 [GitHub 推送约束]
 - Date: 2026-06-08
-- Context: 用户明确要求撤回未经同意推送的 API_ARCHITECTURE.md 文档后强调
+- Context: 用户明确要求撤回未经同意推送的 API_ARCHITECTURE.md 文档后强调，后续对话中用户再次确认约束范围
 - Instructions:
-  - 不要擅自推送任何内容到 GitHub 仓库。
-  - 项目需要同步推送到 GitHub 时，用户自己会明确说明。
-  - 等待用户明确许可后再执行 git push 操作。
+  - 本地 git 操作（git add、git commit）无需许可，可直接执行。
+  - 推送到 GitHub（git push）必须获得用户明确许可后方可执行。
+  - 项目需要同步推送到 GitHub 时，等待用户明确说明“推送”或“push”指令。
