@@ -19,6 +19,7 @@
 - [GitHub Actions 工作流适配](#github-actions-工作流适配)
 - [故障排查](#故障排查)
 - [当前限制](#当前限制)
+- [项目文档](#项目文档)
 - [变更记录](#变更记录)
 - [License](#license)
 
@@ -504,6 +505,18 @@ cd Android/src
 - 真机性能取决于设备、模型大小和加速器配置。
 - 本地 API 服务随 App 进程运行，App 进程被系统回收后服务会停止。
 - 流式响应为逐 token 返回，每个 token 可能包含 1-4 个汉字。
+
+## 项目文档
+
+详细的架构设计、接口规范、开发指南和模块说明请查看 [.monkeycode/docs/INDEX.md](.monkeycode/docs/INDEX.md)。
+
+文档包含以下内容：
+
+- [系统架构](.monkeycode/docs/ARCHITECTURE.md) - 模块关系、请求链路、生命周期
+- [接口文档](.monkeycode/docs/INTERFACES.md) - HTTP API、请求响应模型、配置字段
+- [开发者指南](.monkeycode/docs/DEVELOPER_GUIDE.md) - 构建、调试、日志排查
+- [专有概念](.monkeycode/docs/专有概念/) - 本地 API 服务、OpenAI 兼容层、日志诊断
+- [模块说明](.monkeycode/docs/模块/) - API 服务、配置持久化、设置界面
 
 ## 变更记录
 
