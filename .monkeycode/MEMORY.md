@@ -35,7 +35,9 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
 - Date: 2026-06-05
 - Context: 用户要求继续推进本地 API 服务开发时补充
 - Instructions:
-  - 开发本地 API 服务相关功能时，添加稳定、可搜索的日志标记，方便后续按模块、请求 ID、接口路径、模型 ID 和错误类型查询问题。
+  - 开发本地 API 服务相关功能时，添加稳定、可搜索的日志标记 `LOCAL_API`，方便后续按模块、请求 ID、接口路径、模型 ID 和错误类型查询问题。
+  - 推理级异常必须使用 `HttpTrafficLogger.logException()` 捕获完整 cause chain 和 stack trace，不得仅记 `e.message`。
+  - 日志持久化采用双写：普通日志异步 `apply()`，`logException` / `logCrash` 额外同步 `commit()` 确保进程被杀前已落盘。
 
 [README 同步更新要求]
 - Date: 2026-06-06
