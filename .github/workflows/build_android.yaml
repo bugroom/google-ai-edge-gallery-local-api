@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build_apk:
@@ -40,6 +41,15 @@ jobs:
         run: |
           mv Android/src/app/build/outputs/apk/release/app-release.apk \
              Android/src/app/build/outputs/apk/release/google-ai-edge-gallery-local-api-v1.0.15-${{ steps.timestamp.outputs.ts }}.apk
+
+      - name: Delete old Artifacts
+        run: |
+          for id in $(gh api "repos/${{ github.repository }}/actions/artifacts" --jq '.artifacts[] | select(.name | startswith("google-ai-edge-gallery")) | .id'); do
+            echo "Deleting artifact $id"
+            gh api "repos/${{ github.repository }}/actions/artifacts/$id" -X DELETE
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
