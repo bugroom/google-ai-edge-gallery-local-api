@@ -60,6 +60,12 @@ class ApiServer(
         isLenient = true
         ignoreUnknownKeys = true
     }
+    // Compact serializer for SSE streaming: prettyPrint would inject newlines
+    // into single-line data: payloads, breaking SSE clients.
+    private val jsonCompact = Json {
+        isLenient = true
+        ignoreUnknownKeys = true
+    }
     private val startTime = AtomicLong(0)
     private val currentConnections = AtomicLong(0)
     private val executor: ExecutorService = Executors.newCachedThreadPool()
@@ -423,7 +429,7 @@ class ApiServer(
                         )
                     )
                 )
-                writer.write("data: ${json.encodeToString(streamEvent)}\n\n")
+                writer.write("data: ${jsonCompact.encodeToString(streamEvent)}\n\n")
                 writer.write("data: [DONE]\n\n")
                 writer.flush()
                 doneSent = true
@@ -446,7 +452,7 @@ class ApiServer(
                                     )
                                 )
                             )
-                            val line = "data: ${json.encodeToString(streamEvent)}\n\n"
+                            val line = "data: ${jsonCompact.encodeToString(streamEvent)}\n\n"
                             writer.write(line)
                             writer.flush()
 
@@ -462,8 +468,16 @@ class ApiServer(
                         }
                     }
 
-                    if (!doneSent) {
-                        writeDoneEvent()
+                    try {
+                        if (!doneSent) {
+                            writeDoneEvent()
+                        }
+                    } catch (e: IOException) {
+                        Log.i(TAG, "$LOG_MARKER event=chat_stream_done_write_failed request_id=$requestId reason=${e.message}")
+                        HttpTrafficLogger.logDebug(
+                            TAG,
+                            "$LOG_MARKER event=chat_stream_done_write_failed request_id=$requestId reason=${e.message}",
+                        )
                     }
 
                     HttpTrafficLogger.logResponse("/v1/chat/completions", 200, "$LOG_MARKER event=chat_stream_done request_id=$requestId model=${request.model} duration=${System.currentTimeMillis() - startTime}")
