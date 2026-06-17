@@ -32,11 +32,20 @@ jobs:
       - name: Build release APK
         run: ./gradlew :app:assembleRelease
 
+      - name: Generate build timestamp
+        id: timestamp
+        run: echo "ts=$(date +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
+
+      - name: Rename APK with timestamp
+        run: |
+          mv Android/src/app/build/outputs/apk/release/app-release.apk \
+             Android/src/app/build/outputs/apk/release/google-ai-edge-gallery-local-api-v1.0.15-${{ steps.timestamp.outputs.ts }}.apk
+
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: google-ai-edge-gallery-local-api-release
-          path: Android/src/app/build/outputs/apk/release/app-release.apk
+          name: google-ai-edge-gallery-local-api-release-${{ steps.timestamp.outputs.ts }}
+          path: Android/src/app/build/outputs/apk/release/google-ai-edge-gallery-local-api-v1.0.15-${{ steps.timestamp.outputs.ts }}.apk
 
       - name: Delete old release tag if exists
         working-directory: ${{ github.workspace }}
@@ -67,7 +76,7 @@ jobs:
             - 此版本为自动构建，可能包含未测试的功能
             - 生产环境使用请等待正式 Release
           files: |
-            Android/src/app/build/outputs/apk/release/app-release.apk
+            Android/src/app/build/outputs/apk/release/google-ai-edge-gallery-local-api-v1.0.15-${{ steps.timestamp.outputs.ts }}.apk
           draft: false
           prerelease: true
         env:
