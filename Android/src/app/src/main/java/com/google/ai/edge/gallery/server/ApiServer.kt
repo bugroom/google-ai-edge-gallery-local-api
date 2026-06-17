@@ -173,10 +173,11 @@ class ApiServer(
 
     private fun handleClient(socket: Socket) {
         currentConnections.incrementAndGet()
+        var request: HttpRequest? = null
         try {
             socket.use { client ->
                 try {
-                    val request = readRequest(client)
+                    request = readRequest(client)
                     if (request == null) {
                         Log.w(TAG, "$LOG_MARKER event=empty_request remote=${client.remoteSocketAddress}")
                         return
@@ -209,7 +210,11 @@ class ApiServer(
                     )
                 } catch (e: Exception) {
                     Log.e(TAG, "$LOG_MARKER event=request_error error=${e.message}", e)
-                    HttpTrafficLogger.logError("api-server", "$LOG_MARKER event=request_error error=${e.message}")
+                    HttpTrafficLogger.logException(
+                        TAG,
+                        request?.path ?: "unknown",
+                        RuntimeException("$LOG_MARKER event=request_error method=${request?.method ?: "?"} path=${request?.path ?: "?"}", e),
+                    )
                     writeJsonOrLogDisconnect(client, 500, ErrorResponse(error = e.message ?: "Internal error", type = "internal_error"))
                 }
             }
@@ -245,9 +250,18 @@ class ApiServer(
                 if (chatRequest.stream) {
                     handleStreamChatCompletion(socket, chatRequest)
                 } else {
-                    val response = runBlocking { inferenceHandler.handleChatCompletion(chatRequest) }
-                    writeJson(socket, 200, response)
-                    HttpTrafficLogger.logResponse("/v1/chat/completions", 200, "$LOG_MARKER event=chat_ok request_id=${response.id} model=${response.model}")
+                    try {
+                        val response = runBlocking { inferenceHandler.handleChatCompletion(chatRequest) }
+                        writeJson(socket, 200, response)
+                        HttpTrafficLogger.logResponse("/v1/chat/completions", 200, "$LOG_MARKER event=chat_ok request_id=${response.id} model=${response.model}")
+                    } catch (e: Exception) {
+                        HttpTrafficLogger.logException(
+                            TAG,
+                            "/v1/chat/completions",
+                            RuntimeException("$LOG_MARKER event=chat_route_failed model=${chatRequest.model} stream=false", e),
+                        )
+                        throw e
+                    }
                 }
             }
             else -> {
@@ -337,11 +351,11 @@ class ApiServer(
         try {
             writeJson(socket, statusCode, body)
         } catch (e: SocketException) {
-            Log.i(TAG, "$LOG_MARKER event=response_client_disconnected status=$statusCode reason=${e.message}")
-            HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER event=response_client_disconnected status=$statusCode reason=${e.message}")
+            Log.e(TAG, "$LOG_MARKER event=response_client_disconnected status=$statusCode reason=${e.message}")
+            HttpTrafficLogger.logException(TAG, "/error-response", IOException("$LOG_MARKER event=response_client_disconnected status=$statusCode", e))
         } catch (e: IOException) {
-            Log.i(TAG, "$LOG_MARKER event=response_write_failed status=$statusCode reason=${e.message}")
-            HttpTrafficLogger.logDebug(TAG, "$LOG_MARKER event=response_write_failed status=$statusCode reason=${e.message}")
+            Log.e(TAG, "$LOG_MARKER event=response_write_failed status=$statusCode reason=${e.message}")
+            HttpTrafficLogger.logException(TAG, "/error-response", IOException("$LOG_MARKER event=response_write_failed status=$statusCode", e))
         }
     }
 

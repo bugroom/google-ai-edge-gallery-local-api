@@ -96,13 +96,34 @@ object HttpTrafficLogger {
     }
     
     private fun persistLogs() {
+        persistLogsImpl(commit = false)
+    }
+    
+    /**
+     * Synchronously commits the current log buffer to disk using
+     * SharedPreferences.commit().  Use only for crash-critical paths
+     * (uncaught exception handler, logException) where async apply()
+     * would risk data loss on immediate process death.
+     */
+    private fun persistLogsSync() {
+        persistLogsImpl(commit = true)
+    }
+    
+    private fun persistLogsImpl(commit: Boolean) {
         try {
             val recentLogs = logQueue.toList().takeLast(MAX_PERSISTED_LOGS)
             val persistedLogs = recentLogs.map { it.toPersistedLogEntry() }
             val logsJson = json.encodeToString(persistedLogs)
-            sharedPreferences.edit {
-                putString(KEY_LOGS, logsJson)
-                putBoolean(KEY_LOG_ENABLED, _isLoggingEnabled.value)
+            if (commit) {
+                sharedPreferences.edit(commit = true) {
+                    putString(KEY_LOGS, logsJson)
+                    putBoolean(KEY_LOG_ENABLED, _isLoggingEnabled.value)
+                }
+            } else {
+                sharedPreferences.edit {
+                    putString(KEY_LOGS, logsJson)
+                    putBoolean(KEY_LOG_ENABLED, _isLoggingEnabled.value)
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to persist logs", e)
@@ -117,7 +138,7 @@ object HttpTrafficLogger {
             val stackTrace = sw.toString()
             
             logCrash("Thread: ${thread.name}", stackTrace)
-            persistLogs()
+            persistLogsSync()
             
             defaultHandler?.uncaughtException(thread, throwable)
         }
@@ -171,6 +192,52 @@ object HttpTrafficLogger {
         Log.e(TAG, "[ERROR] $url: $error")
     }
     
+    /**
+     * Formats an exception into a compact single-line string including the full
+     * cause chain.  Used to persist actionable error details even when the
+     * original stack trace is lost.
+     */
+    fun formatExceptionChain(t: Throwable): String {
+        val sb = StringBuilder()
+        var current: Throwable? = t
+        var depth = 0
+        while (current != null && depth < 20) {
+            if (depth > 0) sb.append(" ← ")
+            sb.append(current.javaClass.simpleName)
+            sb.append(": ")
+            sb.append(current.message ?: "(no message)")
+            current = current.cause
+            depth++
+        }
+        return sb.toString()
+    }
+    
+    /**
+     * Logs a full exception with cause chain to the ERROR log, including the
+     * stack trace of the root exception.  Suitable for inference failures.
+     */
+    fun logException(tag: String, url: String, throwable: Throwable) {
+        if (!_isLoggingEnabled.value) return
+        
+        val sw = StringWriter()
+        throwable.printStackTrace(PrintWriter(sw))
+        val chain = formatExceptionChain(throwable)
+        val detail = "${chain}\n--- stack trace ---\n${sw}"
+        
+        val entry = LogEntry(
+            timestamp = System.currentTimeMillis(),
+            type = LogType.ERROR,
+            method = tag,
+            url = url,
+            headers = "",
+            body = "",
+            error = detail
+        )
+        addEntry(entry)
+        persistLogsSync()  // sync-commit for crash resilience
+        Log.e(TAG, "[ERROR] $url: $chain")
+    }
+    
     fun logCrash(location: String, stackTrace: String) {
         val entry = LogEntry(
             timestamp = System.currentTimeMillis(),
@@ -182,6 +249,7 @@ object HttpTrafficLogger {
             error = stackTrace
         )
         addEntry(entry)
+        persistLogsSync()  // sync-commit: called from crash handler, must survive
         Log.e(TAG, "[CRASH] $location")
     }
     

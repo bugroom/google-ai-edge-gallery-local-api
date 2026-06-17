@@ -109,16 +109,18 @@ class ApiInferenceHandler(
       }
     } catch (e: TimeoutCancellationException) {
       Log.e(TAG, "$LOG_MARKER request_id=$requestId event=chat_timeout model=${request.model}", e)
-      HttpTrafficLogger.logError(
+      HttpTrafficLogger.logException(
+        TAG,
         "/v1/chat/completions",
-        "$LOG_MARKER request_id=$requestId event=chat_timeout model=${request.model}",
+        IllegalStateException("$LOG_MARKER request_id=$requestId event=chat_timeout model=${request.model} timeout_ms=$requestTimeoutMs", e),
       )
       throw IllegalStateException("Request timed out after ${requestTimeoutMs}ms", e)
     } catch (e: Exception) {
       Log.e(TAG, "$LOG_MARKER request_id=$requestId event=chat_error model=${request.model}", e)
-      HttpTrafficLogger.logError(
+      HttpTrafficLogger.logException(
+        TAG,
         "/v1/chat/completions",
-        "$LOG_MARKER request_id=$requestId event=chat_error model=${request.model} error=${e.message}",
+        RuntimeException("$LOG_MARKER request_id=$requestId event=chat_error model=${request.model}", e),
       )
       throw e
     }
@@ -163,16 +165,18 @@ class ApiInferenceHandler(
       )
     } catch (e: TimeoutCancellationException) {
       Log.e(TAG, "$LOG_MARKER request_id=$requestId event=chat_stream_timeout model=${request.model}", e)
-      HttpTrafficLogger.logError(
+      HttpTrafficLogger.logException(
+        TAG,
         "/v1/chat/completions",
-        "$LOG_MARKER request_id=$requestId event=chat_stream_timeout model=${request.model}",
+        IllegalStateException("$LOG_MARKER request_id=$requestId event=chat_stream_timeout model=${request.model} timeout_ms=$requestTimeoutMs", e),
       )
       throw IllegalStateException("Request timed out after ${requestTimeoutMs}ms", e)
     } catch (e: Exception) {
       Log.e(TAG, "$LOG_MARKER request_id=$requestId event=chat_stream_error model=${request.model}", e)
-      HttpTrafficLogger.logError(
+      HttpTrafficLogger.logException(
+        TAG,
         "/v1/chat/completions",
-        "$LOG_MARKER request_id=$requestId event=chat_stream_error model=${request.model} error=${e.message}",
+        RuntimeException("$LOG_MARKER request_id=$requestId event=chat_stream_error model=${request.model}", e),
       )
       throw e
     }
